@@ -1,0 +1,9 @@
+locale;code;name;descr
+en;H;Home;Home address for personal communication
+en;O;Office;Work address for business communication
+en;P;Permanent;Permanent residential address
+en;T;Temporary;Temporary stay address
+de;H;Zuhause;Heimadresse für die persönliche Kommunikation
+de;O;Büro;Geschäftsadresse für die berufliche Kommunikation
+de;P;Ständig;Ständige Wohnadresse
+de;T;Vorübergehend;Adresse für vorübergehenden Aufenthalt

@@ -54,3 +54,17 @@ entity Vacations : cuid {
   endsAt      : DateTime;
   traveller   : Association to Travellers;
 }
+
+entity Roles : CodeList {
+  key code : String(10);
+}
+
+entity AppUsers : cuid, managed {
+  userName    : String(100) @mandatory;
+  email       : String(255) @mandatory;
+  fullName    : String(255);
+  role        : Association to Roles;
+  isActive    : Boolean default true;
+  lastLoginAt : DateTime;
+  traveller   : Association to Travellers;
+}
