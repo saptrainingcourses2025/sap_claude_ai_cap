@@ -1,6 +1,9 @@
 using { anubhav.claude as db } from '../db/schema';
 
-service UserManagement @(path: 'user-management') {
+service UserManagement @(
+    path     : 'user-management',
+    requires : 'ADMIN'
+) {
 
   entity Users     as projection on db.Users;
   entity Roles     as projection on db.Roles;
@@ -15,4 +18,3 @@ service UserManagement @(path: 'user-management') {
   action unassignRole(userId: String, roleId: String) returns Boolean;
 }
 
-annotate UserManagement with @requires: 'Admin';

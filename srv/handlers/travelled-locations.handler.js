@@ -20,7 +20,7 @@ module.exports = (srv) => {
 
     if (!travellerID) return req.error(400, 'traveller is required');
 
-    if (!req.user.is('Admin')) {
+    if (!req.user.is('ADMIN')) {
       const traveller = await SELECT.one.from(Travellers).where({ ID: travellerID, userID: req.user.id });
       if (!traveller) return req.error(404, 'Traveller not found');
     }
@@ -40,12 +40,21 @@ module.exports = (srv) => {
   // non-owner's DELETE resolves to 404 (not found) rather than the 403
   // that @restrict's where-clause would produce for a mutating event.
   srv.before('DELETE', TravelledLocations, async (req) => {
-    if (req.user.is('Admin')) return;
+    if (req.user.is('ADMIN')) return;
 
     const id = req.data.ID;
     const owned = await SELECT.one.from(TravelledLocations)
       .where({ ID: id, 'traveller.userID': req.user.id });
     if (!owned) return req.error(404, 'TravelledLocations not found');
+  });
+
+  // TravelledLocations is an immutable travel log: Create/Read/Delete are
+  // granted (see @restrict in srv/catalog-service.cds), but Update is never
+  // granted to any role, including Admin. Same rationale as the explicit
+  // reject on Destinations — no CDS annotation matches this exact CRUD
+  // combination, so it's enforced here to return 405 instead of a generic 403.
+  srv.before('UPDATE', TravelledLocations, (req) => {
+    req.reject(405, 'TravelledLocations are immutable once created');
   });
 
   srv.after('READ', TravelledLocations, (data) => {

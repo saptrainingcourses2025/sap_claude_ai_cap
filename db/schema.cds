@@ -28,7 +28,7 @@ entity Travellers : cuid {
   addressType : common.AddressType   @title: '{i18n>AddressType}';
   type        : common.TravellerType @mandatory @title: '{i18n>TravellerType}';
   status      : common.Status @mandatory default 'A' @title: '{i18n>Status}';
-  userID      : String(100) @mandatory @title: '{i18n>UserID}';
+  userID      : String(100) @mandatory @cds.on.insert: $user @title: '{i18n>UserID}';
   locations   : Composition of many TravelledLocations on locations.traveller = $self @title: '{i18n>Locations}';
   modifiedAt  : Timestamp @cds.on.update: $now @odata.etag @title: '{i18n>ModifiedAt}';
 }

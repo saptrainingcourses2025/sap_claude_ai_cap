@@ -8,7 +8,7 @@ module.exports = (srv) => {
       return req.error(400, 'First name and last name are required');
     }
 
-    if (!req.user.is('Admin')) {
+    if (!req.user.is('ADMIN')) {
       req.data.userID = req.user.id;
     }
 

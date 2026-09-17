@@ -12,12 +12,32 @@
 @catalog_v2    = {{base_v2}}/catalog
 
 ### ── Test IDs (fill after create responses) ─────────────────
-@travellerId      = 00000000-0000-0000-0000-000000000001
-@locationId       = 00000000-0000-0000-0000-000000000002
-@destinationId    = 00000000-0000-0000-0000-000000000003
-@userId           = 00000000-0000-0000-0000-000000000004
-@roleId           = 00000000-0000-0000-0000-000000000005
+@travellerId      = f7fd36f3-56af-4f56-89aa-1aaf6af8b9a6
+@locationId       = a3113b08-30c0-4685-9afe-c4d0cdc74999
+@destinationId    = 3d6b48bd-ba7f-4aa5-9f20-77a6202c3afb
+@userId           = 60ea7668-aa9c-42c9-98da-89462862ed53
+@roleId           = b6b6b6b6-0001-4701-9701-330000000001
 @etag             = W/"abc123"
+@jwt              = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJlNGY1YTZiNy1jOGQ5LTQ0MDEtOTQwMS1mYTEyMzQ2MDAwMDEiLCJpYXQiOjE3ODk2NzIxOTEsImV4cCI6MTc4OTY3MzA5MSwiYXVkIjoiYWNjZXNzIn0.HHu-M7lG-HG6mfUD6DV8SQ0KOGTzuqgePA3YHrhJzMI
+
+### ============================================================
+###  Authorization testing with JWT token
+### ============================================================
+
+### Login Flow
+POST {{base_v4}}/auth/login
+Content-Type: application/json
+
+{
+  "loginName": "admin1@travelapp.com",
+  "password": "Welcome1!"
+}
+
+### Check the user details with JWT
+{{base_v4}}/auth/me
+Authorization: Bearer {{jwt}}
+
+
 
 ### ============================================================
 ###  SECTION 1 — SERVICE METADATA
@@ -133,9 +153,9 @@ Content-Type: application/json
   "email": "john.smith@company.com",
   "phone": "+49-151-12345678",
   "userID": "john.smith@company.com",
-  "type_code": "FRQ",
-  "status_code": "ACT",
-  "addressType_code": "HOME"
+  "type_code": "FF",
+  "status_code": "A",
+  "addressType_code": "H"
 }
 
 ###
@@ -151,9 +171,9 @@ Content-Type: application/json
   "email": "priya.sharma@company.com",
   "phone": "+91-98765-43210",
   "userID": "priya.sharma@company.com",
-  "type_code": "EXE",
-  "status_code": "ACT",
-  "addressType_code": "OFFICE"
+  "type_code": "EX",
+  "status_code": "A",
+  "addressType_code": "O"
 }
 
 ###
@@ -185,7 +205,7 @@ If-Match: {{etag}}
 
 {
   "phone": "+49-151-99999999",
-  "status_code": "ACT"
+  "status_code": "A"
 }
 
 ###
@@ -219,8 +239,8 @@ Content-Type: application/json
   "lastName": "OnlyLastName",
   "email": "nofirst@company.com",
   "userID": "nofirst@company.com",
-  "type_code": "STD",
-  "status_code": "ACT"
+  "type_code": "ST",
+  "status_code": "A"
 }
 
 ###
@@ -234,8 +254,8 @@ Content-Type: application/json
   "lastName": "Duplicate",
   "email": "john.smith@company.com",
   "userID": "john.smith2@company.com",
-  "type_code": "STD",
-  "status_code": "ACT"
+  "type_code": "ST",
+  "status_code": "A"
 }
 
 ###
@@ -408,7 +428,7 @@ Accept: application/json
 
 ### 6.7  Filter active travellers + expand locations in 2025
 GET {{catalog}}/Travellers
-  ?$filter=status_code eq 'ACT'
+  ?$filter=status_code eq 'A'
   &$expand=locations($filter=travelFrom ge 2025-01-01;$orderby=travelFrom asc)
 Accept: application/json
 
@@ -662,9 +682,9 @@ Content-Type: application/json
         "email": "carlos.rivera@company.com",
         "phone": "+1-555-111-2222",
         "userID": "carlos.rivera@company.com",
-        "type_code": "STD",
-        "status_code": "ACT",
-        "addressType_code": "HOME"
+        "type_code": "ST",
+        "status_code": "A",
+        "addressType_code": "H"
       }
     },
     {
@@ -834,7 +854,7 @@ Content-Type: application/json
 ### ============================================================
 
 ### 10.1  Filter travellers by status
-GET {{catalog}}/Travellers?$filter=status_code eq 'ACT'
+GET {{catalog}}/Travellers?$filter=status_code eq 'A'
 Accept: application/json
 
 ###
