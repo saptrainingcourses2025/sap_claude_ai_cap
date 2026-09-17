@@ -1,61 +1,68 @@
 /**
  * schema.cds
  *
- * Business entities for the Vacation & Traveller Management application.
+ * Business entities for the Travel Management application.
  * Reusable types and code lists live in ./common.cds.
  */
 namespace anubhav.claude;
 
-using { cuid, managed, Currency } from '@sap/cds/common';
+using { cuid } from '@sap/cds/common';
 using { anubhav.claude as common } from './common';
 
 entity Destinations : cuid {
-  address    : String(255) @title: '{i18n>Address}';
-  city       : String(40)  @title: '{i18n>City}';
-  postalCode : String(8)   @title: '{i18n>PostalCode}';
-  country    : String(40)  @title: '{i18n>Country}';
-  traveller  : Association to Travellers @title: '{i18n>Traveller}';
+  name        : String(200)  @mandatory @title: '{i18n>DestinationName}';
+  country     : String(100)  @mandatory @title: '{i18n>Country}';
+  city        : String(100)  @mandatory @title: '{i18n>City}';
+  region      : String(100)  @title: '{i18n>Region}';
+  description : LargeString  @title: '{i18n>Description}';
 }
 
-entity Travellers : cuid, managed {
-  userName  : String(255) @mandatory @title: '{i18n>UserName}';
-  firstName : String(255) @title: '{i18n>FirstName}';
-  lastName  : String(255) @title: '{i18n>LastName}';
-  contacts  : Composition of many Contacts on contacts.traveller = $self @title: '{i18n>Contacts}';
-  gender    : String(10) @title: '{i18n>Gender}';
-  age       : Integer @title: '{i18n>Age}';
-  status    : common.Status default 'A' @title: '{i18n>Status}';
-  createdBy : String(40) @title: '{i18n>CreatedBy}';
-  address   : Composition of Destinations @title: '{i18n>Address}';
-  vacations : Composition of many Vacations on vacations.traveller = $self @title: '{i18n>Vacations}';
+annotate Destinations with @assert.unique: { name: [ name ] };
+
+entity Travellers : cuid {
+  firstName   : String(80)  @mandatory @title: '{i18n>FirstName}';
+  lastName    : String(80)  @mandatory @title: '{i18n>LastName}';
+  virtual fullName : String(160) @Core.Computed @title: '{i18n>FullName}';
+  email       : String(120) @mandatory @title: '{i18n>Email}';
+  phone       : String(20)  @title: '{i18n>Phone}';
+  addressType : common.AddressType   @title: '{i18n>AddressType}';
+  type        : common.TravellerType @mandatory @title: '{i18n>TravellerType}';
+  status      : common.Status @mandatory default 'A' @title: '{i18n>Status}';
+  userID      : String(100) @mandatory @title: '{i18n>UserID}';
+  locations   : Composition of many TravelledLocations on locations.traveller = $self @title: '{i18n>Locations}';
+  modifiedAt  : Timestamp @cds.on.update: $now @odata.etag @title: '{i18n>ModifiedAt}';
 }
 
-annotate Travellers with {
-  modifiedAt @odata.etag;
+annotate Travellers with @assert.unique: { email: [ email ] };
+
+entity TravelledLocations : cuid {
+  traveller   : Association to Travellers @mandatory @title: '{i18n>Traveller}';
+  destination : Association to Destinations @mandatory @title: '{i18n>Destination}';
+  travelFrom  : Date @mandatory @title: '{i18n>TravelFrom}';
+  travelTo    : Date @mandatory @title: '{i18n>TravelTo}';
+  notes       : LargeString @title: '{i18n>Notes}';
 }
 
-entity Contacts : cuid {
-  type      : common.AddressType @title: '{i18n>ContactType}';
-  address   : String(255) @title: '{i18n>Address}';
-  traveller : Association to Travellers @title: '{i18n>Traveller}';
+entity Users : cuid {
+  loginName : String(120) @mandatory @title: '{i18n>LoginName}';
+  firstName : String(80)  @mandatory @title: '{i18n>FirstName}';
+  lastName  : String(80)  @mandatory @title: '{i18n>LastName}';
+  isLocked  : Boolean default false @title: '{i18n>IsLocked}';
+  createdAt : Timestamp @cds.on.insert: $now @title: '{i18n>CreatedAt}';
+  roles     : Composition of many UserRoles on roles.user = $self @title: '{i18n>UserRoles}';
 }
 
-entity Vacations : cuid {
-  name        : String(255) @title: '{i18n>Name}';
-  budget      : Decimal(10,2) @title: '{i18n>Budget}';
-  currency    : Currency @title: '{i18n>Currency}';
-  description : String(1024) @title: '{i18n>Description}';
-  startsAt    : DateTime @title: '{i18n>StartsAt}';
-  endsAt      : DateTime @title: '{i18n>EndsAt}';
-  traveller   : Association to Travellers @title: '{i18n>Traveller}';
+annotate Users with @assert.unique: { loginName: [ loginName ] };
+
+entity Roles : cuid {
+  code  : String(10) @mandatory @title: '{i18n>RoleCode}';
+  name  : String(80) @mandatory @title: '{i18n>RoleName}';
+  descr : String(255) @title: '{i18n>RoleDescription}';
 }
 
-entity AppUsers : cuid, managed {
-  userName    : String(100) @mandatory @title: '{i18n>UserName}';
-  email       : String(255) @mandatory @title: '{i18n>Email}';
-  fullName    : String(255) @title: '{i18n>FullName}';
-  role        : common.Role @title: '{i18n>Role}';
-  isActive    : Boolean default true @title: '{i18n>IsActive}';
-  lastLoginAt : DateTime @title: '{i18n>LastLoginAt}';
-  traveller   : Association to Travellers @title: '{i18n>Traveller}';
+annotate Roles with @assert.unique: { code: [ code ] };
+
+entity UserRoles : cuid {
+  user : Association to Users @mandatory @title: '{i18n>User}';
+  role : Association to Roles @mandatory @title: '{i18n>Role}';
 }

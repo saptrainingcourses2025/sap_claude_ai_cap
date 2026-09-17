@@ -1,16 +1,11 @@
-ID;address;city;postalCode;country;traveller_ID
-c2d3e4f5-a6b7-4201-9201-cd1234580001;12 Rue de Rivoli;Paris;75001;France;a1b2c3d4-e5f6-4001-8001-ef1234560001
-c2d3e4f5-a6b7-4201-9201-cd1234580002;1-1 Chiyoda;Tokyo;100-0001;Japan;a1b2c3d4-e5f6-4002-8002-ef1234560002
-c2d3e4f5-a6b7-4201-9201-cd1234580003;350 5th Avenue;New York;10118;United States;a1b2c3d4-e5f6-4003-8003-ef1234560003
-c2d3e4f5-a6b7-4201-9201-cd1234580004;Sheikh Zayed Road;Dubai;00000;United Arab Emirates;a1b2c3d4-e5f6-4004-8004-ef1234560004
-c2d3e4f5-a6b7-4201-9201-cd1234580005;1 Raffles Place;Singapore;048616;Singapore;a1b2c3d4-e5f6-4005-8005-ef1234560005
-c2d3e4f5-a6b7-4201-9201-cd1234580006;10 Oxford Street;London;W1D 1BS;United Kingdom;a1b2c3d4-e5f6-4006-8006-ef1234560006
-c2d3e4f5-a6b7-4201-9201-cd1234580007;1 Circular Quay;Sydney;2000;Australia;a1b2c3d4-e5f6-4007-8007-ef1234560007
-c2d3e4f5-a6b7-4201-9201-cd1234580008;Sukhumvit Road 21;Bangkok;10110;Thailand;a1b2c3d4-e5f6-4008-8008-ef1234560008
-c2d3e4f5-a6b7-4201-9201-cd1234580009;Via del Corso 100;Rome;00186;Italy;a1b2c3d4-e5f6-4009-8009-ef1234560009
-c2d3e4f5-a6b7-4201-9201-cd1234580010;Jalan Pantai Kuta;Bali;80361;Indonesia;a1b2c3d4-e5f6-4010-8010-ef1234560010
-c2d3e4f5-a6b7-4201-9201-cd1234580011;25 Avenue des Champs-Elysees;Paris;75008;France;a1b2c3d4-e5f6-4002-8002-ef1234560002
-c2d3e4f5-a6b7-4201-9201-cd1234580012;3-1 Shibuya;Tokyo;150-0002;Japan;a1b2c3d4-e5f6-4005-8005-ef1234560005
-c2d3e4f5-a6b7-4201-9201-cd1234580013;200 Central Park West;New York;10024;United States;a1b2c3d4-e5f6-4009-8009-ef1234560009
-c2d3e4f5-a6b7-4201-9201-cd1234580014;Palm Jumeirah Road;Dubai;00000;United Arab Emirates;a1b2c3d4-e5f6-4001-8001-ef1234560001
-c2d3e4f5-a6b7-4201-9201-cd1234580015;8 Marina Boulevard;Singapore;018981;Singapore;a1b2c3d4-e5f6-4008-8008-ef1234560008
+ID;name;country;city;region;description
+f1a2b3c4-d5e6-4501-9501-110000000001;Paris;France;Paris;Île-de-France;Whisk away to the City of Light for an unforgettable romantic escape. Wander hand in hand along the Seine, savor candlelit dinners at charming bistros, and capture timeless memories beneath the Eiffel Tower. Includes a private Louvre tour, a Seine river cruise at sunset, and a cooking class in Montmartre.
+f1a2b3c4-d5e6-4501-9501-110000000002;Tokyo;Japan;Tokyo;Kanto;Experience Japan at its most magical during peak cherry blossom season. Wander vibrant neighborhoods, serene temple gardens, and iconic hanami spots including Ueno Park and Shinjuku Gyoen. Includes a traditional tea ceremony, the historic Asakusa district, and a day trip to Mount Fuji.
+f1a2b3c4-d5e6-4501-9501-110000000003;New York;United States;New York;New York;Celebrate the holiday season in the city that never sleeps. Enjoy a Broadway show, ice skating at Rockefeller Center, and the dazzling Fifth Avenue window displays, plus world-class museums and panoramic skyline views from the Top of the Rock.
+f1a2b3c4-d5e6-4501-9501-110000000004;Dubai;United Arab Emirates;Dubai;Dubai;Discover the thrilling contrast of Dubai's glittering skyline and vast golden deserts. Combines a dune bashing safari, camel riding at sunset, an evening at a traditional Bedouin camp, the futuristic Burj Khalifa, the Gold Souk, and Jumeirah Beach.
+f1a2b3c4-d5e6-4501-9501-110000000005;Singapore;Singapore;Singapore;;Immerse yourself in Singapore's fusion of nature and futuristic architecture. Features the Gardens by the Bay light show, a rooftop infinity pool at Marina Bay Sands, guided food tours through Chinatown and Little India, and Sentosa Island.
+f1a2b3c4-d5e6-4501-9501-110000000006;London;United Kingdom;London;England;Step into centuries of history on this heritage tour. Visit the Tower of London, Westminster Abbey, and Buckingham Palace's State Rooms, cruise the Thames, explore the British Museum, and savor traditional afternoon tea.
+f1a2b3c4-d5e6-4501-9501-110000000007;Sydney;Australia;Sydney;New South Wales;Discover the natural beauty and vibrant energy of Sydney. Climb the Sydney Harbour Bridge, tour the Opera House, relax on Bondi Beach, and venture to the Blue Mountains for breathtaking views and wildlife encounters.
+f1a2b3c4-d5e6-4501-9501-110000000008;Bangkok;Thailand;Bangkok;;Dive into the vibrant flavors and bustling energy of Thailand's capital. Sample authentic street food across Chinatown, explore the ornate Grand Palace, cruise the Chao Phraya River, and visit a bustling floating market.
+f1a2b3c4-d5e6-4501-9501-110000000009;Rome;Italy;Rome;Lazio;Walk through thousands of years of history. Explore the Colosseum, the ancient Roman Forum, the Sistine Chapel and Vatican Museums, toss a coin into the Trevi Fountain, and take a day trip to the ruins of Pompeii.
+f1a2b3c4-d5e6-4501-9501-110000000010;Bali;Indonesia;Bali;;Unwind in paradise on the pristine sands of Kuta and Nusa Dua, enjoy sunrise yoga overlooking rice terraces in Ubud, snorkel among vibrant coral reefs, and visit ancient temples like Tanah Lot and Uluwatu.

@@ -1,0 +1,13 @@
+ID;loginName;firstName;lastName;isLocked;createdAt
+e4f5a6b7-c8d9-4401-9401-fa1234600001;admin1@travelapp.com;Meera;Iyer;false;2025-05-01T09:00:00Z
+e4f5a6b7-c8d9-4401-9401-fa1234600002;admin2@travelapp.com;David;Park;false;2025-05-01T09:05:00Z
+e4f5a6b7-c8d9-4401-9401-fa1234600003;agent.patel@travelapp.com;Rohan;Patel;false;2025-06-10T10:00:00Z
+e4f5a6b7-c8d9-4401-9401-fa1234600004;agent.wilson@travelapp.com;Sarah;Wilson;false;2025-06-15T11:30:00Z
+e4f5a6b7-c8d9-4401-9401-fa1234600005;agent.jones@travelapp.com;Michael;Jones;true;2025-07-01T08:00:00Z
+e4f5a6b7-c8d9-4401-9401-fa1234600006;rajesh.kumar@gmail.com;Rajesh;Kumar;false;2025-11-02T09:20:00Z
+e4f5a6b7-c8d9-4401-9401-fa1234600007;priya.sharma@yahoo.com;Priya;Sharma;false;2025-12-14T11:10:00Z
+e4f5a6b7-c8d9-4401-9401-fa1234600008;john.smith@outlook.com;John;Smith;false;2025-09-20T08:50:00Z
+e4f5a6b7-c8d9-4401-9401-fa1234600009;emily.johnson@gmail.com;Emily;Johnson;true;2025-10-05T13:35:00Z
+e4f5a6b7-c8d9-4401-9401-fa1234600010;hans.mueller@web.de;Hans;Mueller;false;2025-08-11T08:00:00Z
+e4f5a6b7-c8d9-4401-9401-fa1234600011;sofia.rossi@libero.it;Sofia;Rossi;false;2026-01-09T10:25:00Z
+e4f5a6b7-c8d9-4401-9401-fa1234600012;yuki.tanaka@gmail.com;Yuki;Tanaka;false;2026-02-17T06:45:00Z

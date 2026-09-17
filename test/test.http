@@ -1,0 +1,35 @@
+### Travel Management CAP App — manual $expand verification
+### Run `cds watch` first, then execute these requests (e.g. with the REST Client / Thunder Client VS Code extension).
+### Mock users are defined in package.json under cds.requires.auth.users.
+
+@baseUrl = http://localhost:4004
+@admin = alice.admin:admin123
+@traveller = rajesh.kumar:traveller123
+
+### 9.1 Travellers with all related data — expand locations and each location's destination
+GET {{baseUrl}}/odata/v4/catalog/Travellers?$expand=locations($expand=destination)
+Authorization: Basic {{admin}}
+
+### Expand with select — only return specific fields
+GET {{baseUrl}}/odata/v4/catalog/Travellers?$expand=locations($select=travelFrom,travelTo,notes;$expand=destination($select=name,country,city))&$select=ID,firstName,lastName,fullName,status_code
+Authorization: Basic {{admin}}
+
+### Expand with filter — only active travellers with locations in 2026+
+GET {{baseUrl}}/odata/v4/catalog/Travellers?$expand=locations($filter=travelFrom ge 2026-01-01)&$filter=status_code eq 'A'
+Authorization: Basic {{admin}}
+
+### 9.2 TravelledLocations with destination detail
+GET {{baseUrl}}/odata/v4/catalog/TravelledLocations?$expand=destination
+Authorization: Basic {{traveller}}
+
+### Expand destination with select
+GET {{baseUrl}}/odata/v4/catalog/TravelledLocations?$expand=destination($select=name,country,city,region)&$orderby=travelFrom desc
+Authorization: Basic {{traveller}}
+
+### 9.3 UserManagement — Users with Roles
+GET {{baseUrl}}/odata/v4/user-management/Users?$expand=roles($expand=role)
+Authorization: Basic {{admin}}
+
+### OData V2 parity check (after `cds add odata-v2-proxy`)
+GET {{baseUrl}}/odata/v2/catalog/Travellers
+Authorization: Basic {{admin}}

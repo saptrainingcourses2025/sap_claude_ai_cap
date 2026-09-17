@@ -1,4 +1,4 @@
-code;name;descr
-ADMIN;Administrator;Full system access
-TRAVELLER;Traveller;Self-service traveller access
-AGENT;Travel Agent;Agent access for managing travellers
+ID;code;name;descr
+b6b6b6b6-0001-4701-9701-330000000001;ADMIN;Administrator;Full system access
+b6b6b6b6-0002-4701-9701-330000000002;TRAVELLER;Traveller;Self-service traveller access
+b6b6b6b6-0003-4701-9701-330000000003;AGENT;Travel Agent;Agent access for managing travellers

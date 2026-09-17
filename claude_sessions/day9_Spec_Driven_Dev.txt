@@ -1,0 +1,2058 @@
+ ▐▛███▛█   Claude Code v2.1.274
+▝▜██████▀  Sonnet 5 · Claude Pro
+  ▝▝ ▝▝    C:\claude\anubhav-claude
+
+
+❯ /rename day9_Spec_driven_dev 
+  ⎿  Session renamed to: day9_Spec_driven_dev
+
+❯ /plan read our specification file @.claude/specs/tyson_spec_srv.md also check 
+existing code base in @db folder as part of current implementation. Based on    
+the specification prepare a detailed plan for implementation.                   
+  ⎿  Enabled plan mode
+
+  Searched for 2 patterns, read 12 files (ctrl+o to expand)
+
+● User answered Claude's questions:
+  ⎿  · The spec's data model conflicts with the existing db/schema.cds in 
+     several places (e.g. Destinations currently models a traveller's address, 
+     not an immutable travel-destination master list; Travellers lacks 
+     email/phone/typeCode/userID; there's no TravellerTypes; Users are a flat 
+     AppUsers+single-role instead of Users/Roles/UserRoles many-to-many). How 
+     should I reconcile this? → Rebuild to match spec exactly (Recommended)
+     · Vacations and Contacts aren't part of the spec's 
+     CatalogService/UserManagement model at all. What should happen to them? → 
+     Remove them entirely (Recommended)
+     · Since entity shapes are changing (new fields like userID, typeCode, 
+     travelFrom/travelTo, etc.), the existing CSV seed data under db/data/ won't
+     load cleanly. How should I handle seed data? → Regenerate CSVs to match 
+     new schema (Recommended)
+
+  Searched for 5 patterns, read 1 file (ctrl+o to expand)
+
+● Plan(Design CAP schema and service implementation plan)
+  ⎿  Backgrounded agent (↓ to manage · ctrl+o to expand)
+
+● I've kicked off a detailed design pass for the schema, services, and handlers
+  based on the spec and your three decisions. I'll wait for it to finish before
+  drafting the final plan file.
+
+✻ Cogitated for 3m 9s · done 10:44 PM
+
+● Agent "Design CAP schema and service implementation plan" finished · 8m 17s
+
+● Updated plan
+  ⎿  /plan to preview
+
+● The plan is written. Now requesting approval to proceed.
+  ⎿  User rejected Claude's plan:
+     ╭─────────────────────────────────────────────────────────────────────────╮
+     │ Travel Management CAP App — CatalogService + UserManagement             │
+     │                                                                         │
+     │ Context                                                                 │
+     │                                                                         │
+     │ .claude/specs/tyson_spec_srv.md defines two OData services              │
+     │ (CatalogService, UserManagement) that don't exist yet — srv/ is         │
+     │ currently empty. db/schema.cds and db/common.cds already exist but      │
+     │ model a different, earlier domain (traveller addresses via              │
+     │ Destinations, Contacts, Vacations, a flat AppUsers with a single role), │
+     │ which conflicts with the spec's entity shapes in most places (no        │
+     │ TravellerTypes, no TravelledLocations, Destinations means something     │
+     │ else, no Roles/UserRoles many-to-many, Travellers is missing            │
+     │ email/phone/typeCode/userID).                                           │
+     │                                                                         │
+     │ Per user decision, we are rebuilding db/ to match the spec exactly,     │
+     │ deleting Vacations/Contacts (not spec-covered), and regenerating all    │
+     │ CSV seed data to fit the new shapes while reusing existing sample       │
+     │ names/places conceptually. This plan implements the full db + srv layer │
+     │ plus supporting config, seed data, i18n, and tests.                     │
+     │                                                                         │
+     │ Two design ambiguities in the spec are resolved as follows (flagged     │
+     │ since they're judgment calls, not literal spec text):                   │
+     │ - Roles/UserRoles shape: the spec's own $expand example                 │
+     │   (Users?$expand=roles($select=role_ID;$expand=role(...))) implies      │
+     │   UserRoles is UUID-keyed, not code-keyed — so                          │
+     │   UserManagement.Roles/UserRoles are new cuid entities in               │
+     │   db/schema.cds, distinct from (and replacing) the old db/common.cds    │
+     │   Roles CodeList.                                                       │
+     │ - Destinations 405 on PATCH/DELETE: @readonly would also block CREATE   │
+     │   (contradicts the spec's required POST → 201), so use @insertonly      │
+     │   instead, which permits CREATE+READ and blocks UPDATE/DELETE.          │
+     │ - Traveller-role CREATE on Travellers/TravelledLocations: @restrict's   │
+     │   where clause can't scope an INSERT (no row exists yet), so CREATE is  │
+     │   granted to Traveller in CDS, and a before('CREATE') handler           │
+     │   force-sets userID/validates ownership server-side.                    │
+     │                                                                         │
+     │ db/common.cds (rewrite)                                                 │
+     │                                                                         │
+     │ Keep AddressTypes, TravellerStatus as read-only CodeList entities; add  │
+     │ a new TravellerTypes CodeList (codes FF/EX/ST — Frequent                │
+     │ Flyer/Executive/Standard). All three get @readonly @cds.autoexpose.     │
+     │ Remove the old Roles CodeList and Role type entirely (replaced by the   │
+     │ new UUID-keyed Roles/UserRoles in schema.cds — see above). Add types    │
+     │ AddressType, Status, TravellerType as associations to the three code    │
+     │ lists.                                                                  │
+     │                                                                         │
+     │ db/schema.cds (rewrite)                                                 │
+     │                                                                         │
+     │ - Destinations (@insertonly, immutable master list): ID (cuid), name    │
+     │   (String(200), mandatory, @assert.unique), country/city (String(100),  │
+     │   mandatory), region (String(100), optional), description (LargeString, │
+     │   optional).                                                            │
+     │ - Travellers (cuid): firstName/lastName (String(80), mandatory),        │
+     │   fullName (virtual, @Core.Computed, never persisted), email            │
+     │   (String(120), mandatory, @assert.unique), phone (String(20),          │
+     │   optional), addressType (assoc to AddressTypes), type (assoc to        │
+     │   TravellerTypes, mandatory), status (assoc to TravellerStatus,         │
+     │   mandatory, default 'A'), userID (String(100), mandatory — row-filter  │
+     │   key), locations (Composition of many TravelledLocations on            │
+     │   locations.traveller = $self — named locations specifically because    │
+     │   spec Section 9's $expand=locations(...) examples require that         │
+     │   property name), modifiedAt (Timestamp, @cds.on.update: $now,          │
+     │   @odata.etag).                                                         │
+     │ - TravelledLocations (cuid, immutable log — no Update): traveller       │
+     │   (assoc to Travellers, mandatory), destination (assoc to Destinations, │
+     │   mandatory), travelFrom/travelTo (Date, mandatory), notes              │
+     │   (LargeString, optional).                                              │
+     │ - Users (cuid): loginName (String(120), mandatory, @assert.unique),     │
+     │   firstName/lastName (String(80), mandatory), isLocked (Boolean,        │
+     │   default false), createdAt (Timestamp, @cds.on.insert: $now), roles    │
+     │   (Composition of many UserRoles on roles.user = $self).                │
+     │ - Roles (cuid, new — see ambiguity note above): code (String(10),       │
+     │   mandatory, unique), name (String(80), mandatory), descr               │
+     │   (String(255)).                                                        │
+     │ - UserRoles (cuid, junction): user (assoc to Users, mandatory), role    │
+     │   (assoc to Roles, mandatory).                                          │
+     │                                                                         │
+     │ No managed aspect anywhere — spec's field tables are deliberately       │
+     │ minimal (no createdBy audit trail beyond what's explicitly listed).     │
+     │                                                                         │
+     │ srv/catalog-service.cds                                                 │
+     │                                                                         │
+     │ Service at @(path: '/catalog'), @requires: 'authenticated-user'.        │
+     │ Projections: Travellers, TravelledLocations, Destinations, plus         │
+     │ TravellerTypes/TravellerStatus/AddressTypes (projected from db.common,  │
+     │ inheriting their db-layer @readonly @cds.autoexpose).                   │
+     │                                                                         │
+     │ @restrict blocks (exact pattern from spec §5.2, with CREATE added to    │
+     │ the Traveller grant per the ambiguity note):                            │
+     │ cds                                                                     │
+     │ annotate CatalogService.Travellers with @restrict: [                    │
+     │   { grant: ['READ','UPDATE','CREATE'], to: 'Traveller', where: 'userID  │
+     │ = $user' },                                                             │
+     │   { grant: '*', to: 'Admin' }                                           │
+     │ ];                                                                      │
+     │ annotate CatalogService.TravelledLocations with @restrict: [            │
+     │   { grant: ['READ','CREATE','DELETE'], to: 'Traveller', where:          │
+     │ 'traveller.userID = $user' },                                           │
+     │   { grant: '*', to: 'Admin' }                                           │
+     │ ];                                                                      │
+     │ annotate CatalogService.Destinations with @restrict: [                  │
+     │   { grant: ['READ','CREATE'], to: 'authenticated-user' }                │
+     │ ];                                                                      │
+     │ (Value-help entities get simple READ-only @restrict to                  │
+     │ authenticated-user.)                                                    │
+     │                                                                         │
+     │ srv/user-management.cds                                                 │
+     │                                                                         │
+     │ Service at @(path: '/user-management'), projections for Users, Roles,   │
+     │ UserRoles. Two functions (lockUser, unlockUser — String in, Boolean     │
+     │ out) and four actions (createUser(firstName, lastName, email, roleId):  │
+     │ Users, resetPassword(userId, newPassword): Boolean, assignRole(userId,  │
+     │ roleId): Boolean, unassignRole(userId, roleId): Boolean), matching spec │
+     │ §3.6 signatures. annotate UserManagement with @requires: 'Admin'; as    │
+     │ its own statement (matches spec's literal snippet).                     │
+     │                                                                         │
+     │ srv/handlers (generic handler pattern, JS only)                         │
+     │                                                                         │
+     │ - srv/catalog-service.js / srv/user-management.js — thin entry points   │
+     │   that require and wire the handler modules below (auto-loaded by CAP   │
+     │   via matching basenames).                                              │
+     │ - srv/handlers/travellers.handler.js:                                   │
+     │   - before CREATE: reject 400 if firstName/lastName blank; for          │
+     │     non-Admin callers, force req.data.userID = req.user.id; pre-check   │
+     │     email uniqueness → 409 'Email already registered'.                  │
+     │   - before UPDATE: reject 400 if payload includes fullName.             │
+     │   - after READ: enrich fullName = firstName + ' ' + lastName per the    │
+     │     exact pattern in spec §10 (handles both array and single-object     │
+     │     data).                                                              │
+     │   - ETag 428/412: rely on CAP's built-in OData V4 concurrency handling  │
+     │     via @odata.etag first; verify against a live cds watch run before   │
+     │     adding any custom If-Match check.                                   │
+     │ - srv/handlers/travelled-locations.handler.js — before CREATE: validate │
+     │   travelFrom/travelTo present and travelFrom <= travelTo (400),         │
+     │   validate destination_ID exists (400), for non-Admin callers verify    │
+     │   the target traveller_ID belongs to the caller, and run an overlap     │
+     │   query against existing rows for the same traveller (NOT (travelTo <   │
+     │   :from OR travelFrom > :to)) → 409 if any match.                       │
+     │ - srv/handlers/destinations.handler.js — optional defensive             │
+     │   duplicate-name pre-check → clean 409 (parallels the email check).     │
+     │ - srv/handlers/user-management.handler.js — implements                  │
+     │   lockUser/unlockUser (404 if user missing, idempotent false return if  │
+     │   already in target state, otherwise flip + return true), createUser    │
+     │   (404 if roleId invalid, 409 if loginName taken, else insert Users +   │
+     │   UserRoles), resetPassword (400 for empty or <8-char password; no      │
+     │   password persisted locally — spec's Users entity has no password      │
+     │   field, so this validates and returns true only), assignRole (404 if   │
+     │   role invalid, idempotent insert), unassignRole (404 if assignment     │
+     │   missing, else delete).                                                │
+     │                                                                         │
+     │ db/data/*.csv                                                           │
+     │                                                                         │
+     │ Delete: Contacts.csv, Vacations.csv, AppUsers.csv.                      │
+     │ Keep as-is: AddressTypes.csv (+_texts), TravellerStatus.csv.            │
+     │ New: TravellerTypes.csv (+_texts), Roles.csv, Users.csv, UserRoles.csv, │
+     │ TravelledLocations.csv.                                                 │
+     │ Replace: Travellers.csv (new columns: ID;firstName;lastName;email;phone │
+     │ ;addressType_code;type_code;status_code;userID;modifiedAt — reuse the   │
+     │ same 10 people, reuse old userName values as userID), Destinations.csv  │
+     │ (new columns: ID;name;country;city;region;description — consolidate the │
+     │ old 15 address rows into ~10-12 uniquely-named destinations, reusing    │
+     │ city/country pairs and repurposing the old Vacations.csv prose as       │
+     │ description).                                                           │
+     │                                                                         │
+     │ TravelledLocations.csv derives from the old Vacations.csv (reuse        │
+     │ startsAt/endsAt as travelFrom/travelTo, trimmed description as notes,   │
+     │ pointing at the matching new Destinations row). Users.csv/UserRoles.csv │
+     │ derive from the old AppUsers.csv (12 people: 2 admins, 3 agents, 7      │
+     │ travellers — old email → loginName, old isActive=false →                │
+     │ isLocked=true).                                                         │
+     │                                                                         │
+     │ package.json                                                            │
+     │                                                                         │
+     │ Add @sap/audit-logging (audit UserManagement writes per spec §4.7) and  │
+     │ jest + a test script. Add a cds.requires.auth block: kind: 'mocked' for │
+     │ local dev with at least one Admin-scoped mock user and one              │
+     │ Traveller-scoped mock user whose username equals a seeded               │
+     │ Travellers.userID (so $user in the @restrict where clause matches),     │
+     │ plus a [production] profile override to kind: 'xsuaa'. Run cds add      │
+     │ odata-v2-proxy as an implementation step (CLI-generated config, not     │
+     │ hand-authored) to satisfy the OData V2 requirement. Keep @sap/cds ^9    │
+     │ (already installed; spec's ^8.x pin is stale advice, not worth          │
+     │ downgrading for).                                                       │
+     │                                                                         │
+     │ i18n (all 4 locale files)                                               │
+     │                                                                         │
+     │ Remove keys only used by deleted fields/entities (UserName, Gender,     │
+     │ Age, CreatedBy, Contacts, Vacations, Address, PostalCode, ContactType,  │
+     │ Budget, Currency, StartsAt, EndsAt, IsActive, LastLoginAt). Keep        │
+     │ reusable keys (FirstName, LastName, Status, City, Country, Name,        │
+     │ Description, Traveller, Email, FullName, AddressTypeCode,               │
+     │ TravellerStatusCode, RoleCode). Add new keys for the new fields (Phone, │
+     │ AddressType, TravellerType, TravellerTypeCode, UserID, ModifiedAt,      │
+     │ Locations, Destination, DestinationName, Region, TravelFrom, TravelTo,  │
+     │ Notes, LoginName, IsLocked, CreatedAt, User, UserRoles, RoleName,       │
+     │ RoleDescription). Use the cap-lang-check skill after editing to confirm │
+     │ key-set parity across i18n.properties/_en/_de/_hi.                      │
+     │                                                                         │
+     │ Tests                                                                   │
+     │                                                                         │
+     │ Add a test/ folder using cds.test (bundled with @sap/cds), one file per │
+     │ spec §8 acceptance-criteria group: Travellers CRUD + ETag               │
+     │ (428/412/200), TravelledLocations CRUD + overlap/date validation +      │
+     │ $expand, Destinations/value-help read-only enforcement, UserManagement  │
+     │ functions/actions + 403 for non-admins, and a $batch mixed-success      │
+     │ test. Add test/test.http with the literal §9 $expand GET calls for      │
+     │ manual verification during cds watch.                                   │
+     │                                                                         │
+     │ Verification                                                            │
+     │                                                                         │
+     │ 1. npm install (after package.json edits) then cds add odata-v2-proxy.  │
+     │ 2. cds watch — confirm no startup errors and $metadata resolves all     │
+     │    entities on both /odata/v4/catalog and /odata/v4/user-management.    │
+     │ 3. npm test (Jest) — all suites pass.                                   │
+     │ 4. Manually exercise test/test.http against the running dev server      │
+     │    using the two mock users (Admin, Traveller) to confirm row-level     │
+     │    filtering, ETag enforcement, and $expand results match spec §9.      │
+     │ 5. npx cds lint on all .cds files — zero errors.                        │
+     │                                                                         │
+     │ Critical files                                                          │
+     │                                                                         │
+     │ - db/common.cds, db/schema.cds                                          │
+     │ - srv/catalog-service.cds, srv/catalog-service.js,                      │
+     │   srv/handlers/travellers.handler.js,                                   │
+     │   srv/handlers/travelled-locations.handler.js,                          │
+     │   srv/handlers/destinations.handler.js                                  │
+     │ - srv/user-management.cds, srv/user-management.js,                      │
+     │   srv/handlers/user-management.handler.js                               │
+     │ - db/data/*.csv (per file list above)                                   │
+     │ - package.json, db/i18n/*.properties                                    │
+     │ - test/*.test.js, test/test.http                                        │
+     ╰─────────────────────────────────────────────────────────────────────────╯
+
+✻ Worked for 51s · done 10:53 PM
+
+❯ /plan read our specification file @.claude/specs/tyson_spec_srv.md also check 
+existing code base in @db folder as part of current implementation. Based on    
+the specification prepare a detailed plan for implementation.                   
+  ⎿  Already in plan mode. No plan written yet.
+
+❯ clear                                                                         
+
+● It looks like the session was cleared and plan mode exited without the plan
+  being approved. I don't have a confirmed plan to act on right now.
+
+  Could you let me know how you'd like to proceed?
+
+● User declined to answer questions
+  ⎿  · What would you like me to do next? (Re-plan from scratch / Implement 
+     directly)
+
+✻ Baked for 12s · done 10:58 PM
+
+❯ cls                                                                           
+
+● I'll pause here and wait for your direction.
+
+✻ Baked for 2s · done 10:58 PM
+
+❯ /exit                                                                         
+
+※ recap: We planned a full CAP schema/service rebuild for the Travel Management app per the spec, but the plan got interrupted before approval. Next: confirm whether to re-plan or go straight to implementation. (disable recaps in /config)
+
+❯ /plan read our specification file @.claude/specs/tyson_spec_srv.md also check 
+existing code base in @db folder as part of current implementation. Based on    
+the specification prepare a detailed plan for implementation.                   
+  ⎿  Enabled plan mode
+
+  Listed 1 directory, ran 1 shell command (ctrl+o to expand)
+
+● Repo state is unchanged since my earlier analysis, so I'll reuse the validated
+  plan design and write it to the new plan file.
+
+● Updated plan  ⎿  /plan to preview
+
+● User approved Claude's plan
+  ⎿  Plan saved to: ~\.claude\plans\memoized-rolling-donut.md · /plan to edit
+     Travel Management CAP App — CatalogService + UserManagement
+
+     Context
+
+     .claude/specs/tyson_spec_srv.md defines two OData services (CatalogService,
+     UserManagement) that don't exist yet — srv/ is currently empty.
+     db/schema.cds and db/common.cds already exist but model a different,
+     earlier domain (traveller addresses via Destinations, Contacts, Vacations,
+     a flat AppUsers with a single role), which conflicts with the spec's entity
+     shapes in most places (no TravellerTypes, no TravelledLocations,
+     Destinations means something else, no Roles/UserRoles many-to-many,
+     Travellers is missing email/phone/typeCode/userID).
+
+     Per user decision, we are rebuilding db/ to match the spec exactly,
+     deleting Vacations/Contacts (not spec-covered), and regenerating all CSV
+     seed data to fit the new shapes while reusing existing sample names/places
+     conceptually. This plan implements the full db + srv layer plus supporting
+     config, seed data, i18n, and tests.
+
+     Two design ambiguities in the spec are resolved as follows (flagged since
+     they're judgment calls, not literal spec text):
+     - Roles/UserRoles shape: the spec's own $expand example
+       (Users?$expand=roles($select=role_ID;$expand=role(...))) implies
+       UserRoles is UUID-keyed, not code-keyed — so
+       UserManagement.Roles/UserRoles are new cuid entities in db/schema.cds,
+       distinct from (and replacing) the old db/common.cds Roles CodeList.
+     - Destinations 405 on PATCH/DELETE: @readonly would also block CREATE
+       (contradicts the spec's required POST → 201), so use @insertonly instead,
+       which permits CREATE+READ and blocks UPDATE/DELETE.
+     - Traveller-role CREATE on Travellers/TravelledLocations: @restrict's where
+       clause can't scope an INSERT (no row exists yet), so CREATE is granted
+       to Traveller in CDS, and a before('CREATE') handler force-sets
+       userID/validates ownership server-side.
+
+     db/common.cds (rewrite)
+
+     Keep AddressTypes, TravellerStatus as read-only CodeList entities; add a
+     new TravellerTypes CodeList (codes FF/EX/ST — Frequent
+     Flyer/Executive/Standard). All three get @readonly @cds.autoexpose. Remove
+     the old Roles CodeList and Role type entirely (replaced by the new
+     UUID-keyed Roles/UserRoles in schema.cds — see above). Add types
+     AddressType, Status, TravellerType as associations to the three code lists.
+
+     db/schema.cds (rewrite)
+
+     - Destinations (@insertonly, immutable master list): ID (cuid), name
+       (String(200), mandatory, @assert.unique), country/city (String(100),
+       mandatory), region (String(100), optional), description (LargeString,
+       optional).
+     - Travellers (cuid): firstName/lastName (String(80), mandatory), fullName
+       (virtual, @Core.Computed, never persisted), email (String(120),
+       mandatory, @assert.unique), phone (String(20), optional), addressType
+       (assoc to AddressTypes), type (assoc to TravellerTypes, mandatory),
+       status (assoc to TravellerStatus, mandatory, default 'A'), userID
+       (String(100), mandatory — row-filter key), locations (Composition of many
+       TravelledLocations on locations.traveller = $self — named locations
+       specifically because spec Section 9's $expand=locations(...) examples
+       require that property name), modifiedAt (Timestamp, @cds.on.update: $now,
+       @odata.etag).
+     - TravelledLocations (cuid, immutable log — no Update): traveller (assoc to
+       Travellers, mandatory), destination (assoc to Destinations, mandatory),
+       travelFrom/travelTo (Date, mandatory), notes (LargeString, optional).
+     - Users (cuid): loginName (String(120), mandatory, @assert.unique),
+       firstName/lastName (String(80), mandatory), isLocked (Boolean, default
+       false), createdAt (Timestamp, @cds.on.insert: $now), roles (Composition
+       of many UserRoles on roles.user = $self).
+     - Roles (cuid, new — see ambiguity note above): code (String(10),
+       mandatory, unique), name (String(80), mandatory), descr (String(255)).
+     - UserRoles (cuid, junction): user (assoc to Users, mandatory), role (assoc
+       to Roles, mandatory).
+
+     No managed aspect anywhere — spec's field tables are deliberately minimal
+     (no createdBy audit trail beyond what's explicitly listed).
+
+     srv/catalog-service.cds
+
+     Service at @(path: '/catalog'), @requires: 'authenticated-user'.
+     Projections: Travellers, TravelledLocations, Destinations, plus
+     TravellerTypes/TravellerStatus/AddressTypes (projected from db.common,
+     inheriting their db-layer @readonly @cds.autoexpose).
+
+     @restrict blocks (exact pattern from spec §5.2, with CREATE added to the
+     Traveller grant per the ambiguity note):
+     cds
+     annotate CatalogService.Travellers with @restrict: [
+       { grant: ['READ','UPDATE','CREATE'], to: 'Traveller', where: 'userID =
+     $user' },
+       { grant: '*', to: 'Admin' }
+     ];
+     annotate CatalogService.TravelledLocations with @restrict: [
+       { grant: ['READ','CREATE','DELETE'], to: 'Traveller', where:
+     'traveller.userID = $user' },
+       { grant: '*', to: 'Admin' }
+     ];
+     annotate CatalogService.Destinations with @restrict: [
+       { grant: ['READ','CREATE'], to: 'authenticated-user' }
+     ];
+     (Value-help entities get simple READ-only @restrict to authenticated-user.)
+
+     srv/user-management.cds
+
+     Service at @(path: '/user-management'), projections for Users, Roles,
+     UserRoles. Two functions (lockUser, unlockUser — String in, Boolean out)
+     and four actions (createUser(firstName, lastName, email, roleId): Users,
+     resetPassword(userId, newPassword): Boolean, assignRole(userId, roleId): 
+     Boolean, unassignRole(userId, roleId): Boolean), matching spec §3.6
+     signatures. annotate UserManagement with @requires: 'Admin'; as its own
+     statement (matches spec's literal snippet).
+
+     srv/handlers (generic handler pattern, JS only)
+
+     - srv/catalog-service.js / srv/user-management.js — thin entry points that
+       require and wire the handler modules below (auto-loaded by CAP via
+       matching basenames).
+     - srv/handlers/travellers.handler.js:
+       - before CREATE: reject 400 if firstName/lastName blank; for non-Admin
+         callers, force req.data.userID = req.user.id; pre-check email
+         uniqueness → 409 'Email already registered'.
+       - before UPDATE: reject 400 if payload includes fullName.
+       - after READ: enrich fullName = firstName + ' ' + lastName per the exact
+         pattern in spec §10 (handles both array and single-object data).
+       - ETag 428/412: rely on CAP's built-in OData V4 concurrency handling via
+         @odata.etag first; verify against a live cds watch run before adding
+         any custom If-Match check.
+     - srv/handlers/travelled-locations.handler.js — before CREATE: validate
+       travelFrom/travelTo present and travelFrom <= travelTo (400), validate
+       destination_ID exists (400), for non-Admin callers verify the target
+       traveller_ID belongs to the caller, and run an overlap query against
+       existing rows for the same traveller (NOT (travelTo < :from OR travelFrom
+       > :to)) → 409 if any match.
+     - srv/handlers/destinations.handler.js — optional defensive duplicate-name
+       pre-check → clean 409 (parallels the email check).
+     - srv/handlers/user-management.handler.js — implements lockUser/unlockUser
+       (404 if user missing, idempotent false return if already in target state,
+       otherwise flip + return true), createUser (404 if roleId invalid, 409 if
+       loginName taken, else insert Users + UserRoles), resetPassword (400 for
+       empty or <8-char password; no password persisted locally — spec's Users
+       entity has no password field, so this validates and returns true only),
+       assignRole (404 if role invalid, idempotent insert), unassignRole (404 if
+       assignment missing, else delete).
+
+     db/data/*.csv
+
+     Delete: Contacts.csv, Vacations.csv, AppUsers.csv.
+     Keep as-is: AddressTypes.csv (+_texts), TravellerStatus.csv.
+     New: TravellerTypes.csv (+_texts), Roles.csv, Users.csv, UserRoles.csv,
+     TravelledLocations.csv.
+     Replace: Travellers.csv (new columns: ID;firstName;lastName;email;phone;add
+     ressType_code;type_code;status_code;userID;modifiedAt — reuse the same 10
+     people, reuse old userName values as userID), Destinations.csv (new
+     columns: ID;name;country;city;region;description — consolidate the old 15
+     address rows into ~10-12 uniquely-named destinations, reusing city/country
+     pairs and repurposing the old Vacations.csv prose as description).
+
+     TravelledLocations.csv derives from the old Vacations.csv (reuse
+     startsAt/endsAt as travelFrom/travelTo, trimmed description as notes,
+     pointing at the matching new Destinations row). Users.csv/UserRoles.csv
+     derive from the old AppUsers.csv (12 people: 2 admins, 3 agents, 7
+     travellers — old email → loginName, old isActive=false → isLocked=true).
+
+     package.json
+
+     Add @sap/audit-logging (audit UserManagement writes per spec §4.7) and jest
+     + a test script. Add a cds.requires.auth block: kind: 'mocked' for local
+     dev with at least one Admin-scoped mock user and one Traveller-scoped mock
+     user whose username equals a seeded Travellers.userID (so $user in the
+     @restrict where clause matches), plus a [production] profile override to
+     kind: 'xsuaa'. Run cds add odata-v2-proxy as an implementation step
+     (CLI-generated config, not hand-authored) to satisfy the OData V2
+     requirement. Keep @sap/cds ^9 (already installed; spec's ^8.x pin is stale
+     advice, not worth downgrading for).
+
+     i18n (all 4 locale files)
+
+     Remove keys only used by deleted fields/entities (UserName, Gender, Age,
+     CreatedBy, Contacts, Vacations, Address, PostalCode, ContactType, Budget,
+     Currency, StartsAt, EndsAt, IsActive, LastLoginAt). Keep reusable keys
+     (FirstName, LastName, Status, City, Country, Name, Description, Traveller,
+     Email, FullName, AddressTypeCode, TravellerStatusCode, RoleCode). Add new
+     keys for the new fields (Phone, AddressType, TravellerType,
+     TravellerTypeCode, UserID, ModifiedAt, Locations, Destination,
+     DestinationName, Region, TravelFrom, TravelTo, Notes, LoginName, IsLocked,
+     CreatedAt, User, UserRoles, RoleName, RoleDescription). Use the
+     cap-lang-check skill after editing to confirm key-set parity across
+     i18n.properties/_en/_de/_hi.
+
+     Tests
+
+     Add a test/ folder using cds.test (bundled with @sap/cds), one file per
+     spec §8 acceptance-criteria group: Travellers CRUD + ETag (428/412/200),
+     TravelledLocations CRUD + overlap/date validation + $expand,
+     Destinations/value-help read-only enforcement, UserManagement
+     functions/actions + 403 for non-admins, and a $batch mixed-success test.
+     Add test/test.http with the literal §9 $expand GET calls for manual
+     verification during cds watch.
+
+     Verification
+
+     1. npm install (after package.json edits) then cds add odata-v2-proxy.
+     2. cds watch — confirm no startup errors and $metadata resolves all
+        entities on both /odata/v4/catalog and /odata/v4/user-management.
+     3. npm test (Jest) — all suites pass.
+     4. Manually exercise test/test.http against the running dev server using
+        the two mock users (Admin, Traveller) to confirm row-level filtering,
+        ETag enforcement, and $expand results match spec §9.
+     5. npx cds lint on all .cds files — zero errors.
+
+     Critical files
+
+     - db/common.cds, db/schema.cds
+     - srv/catalog-service.cds, srv/catalog-service.js,
+       srv/handlers/travellers.handler.js,
+       srv/handlers/travelled-locations.handler.js,
+       srv/handlers/destinations.handler.js
+     - srv/user-management.cds, srv/user-management.js,
+       srv/handlers/user-management.handler.js
+     - db/data/*.csv (per file list above)
+     - package.json, db/i18n/*.properties
+     - test/*.test.js, test/test.http
+
+● Let's start implementing. First up: db/common.cds.
+
+  Read 4 files (ctrl+o to expand)
+
+● Now let's write the new db/common.cds and db/schema.cds.
+
+● Write(db\common.cds)
+  ⎿  Added 12 lines, removed 6 lines
+      2   * common.cds
+      3   *
+      4   * Reusable types, code lists, and type definitions shared acros
+         s
+      5 - * the Vacation & Traveller Management data model.              
+      5 + * the Travel Management data model.                            
+      6   *
+      7   * This file is the single source of truth for reusable artifact
+         s.
+      8   * Business entities should import from this file rather than
+     ...
+      12  
+      13  using { sap.common.CodeList } from '@sap/cds/common';
+      14  
+      15 +@readonly                                                      
+      16 +@cds.autoexpose                                                
+      17  entity AddressTypes : CodeList {
+      18    key code : String(1) @title: '{i18n>AddressTypeCode}';
+      19  }
+      20  
+      21 +@readonly                                                      
+      22 +@cds.autoexpose                                                
+      23  entity TravellerStatus : CodeList {
+      24    key code : String(1) @title: '{i18n>TravellerStatusCode}';
+      25  }
+      26  
+      23 -entity Roles : CodeList {                                      
+      24 -  key code : String(10) @title: '{i18n>RoleCode}';             
+      27 +@readonly                                                      
+      28 +@cds.autoexpose                                                
+      29 +entity TravellerTypes : CodeList {                             
+      30 +  key code : String(2) @title: '{i18n>TravellerTypeCode}';     
+      31  }
+      32  
+      27 -type AddressType : Association to AddressTypes;                
+      28 -type Status      : Association to TravellerStatus;             
+      29 -type Role        : Association to Roles;                       
+      33 +type AddressType   : Association to AddressTypes;              
+      34 +type Status        : Association to TravellerStatus;           
+      35 +type TravellerType : Association to TravellerTypes;            
+
+● Write(db\schema.cds)
+  ⎿  Added 48 lines, removed 40 lines
+       1  /**
+       2   * schema.cds
+       3   *
+       4 - * Business entities for the Vacation & Traveller Management ap
+         -plication.                                                     
+       4 + * Business entities for the Travel Management application.    
+       5   * Reusable types and code lists live in ./common.cds.
+       6   */
+       7  namespace anubhav.claude;
+       8  
+       9 -using { cuid, managed, Currency } from '@sap/cds/common';      
+       9 +using { cuid } from '@sap/cds/common';                         
+      10  using { anubhav.claude as common } from './common';
+      11  
+      12 +@insertonly                                                    
+      13  entity Destinations : cuid {
+      13 -  address    : String(255) @title: '{i18n>Address}';           
+      14 -  city       : String(40)  @title: '{i18n>City}';              
+      15 -  postalCode : String(8)   @title: '{i18n>PostalCode}';        
+      16 -  country    : String(40)  @title: '{i18n>Country}';           
+      17 -  traveller  : Association to Travellers @title: '{i18n>Travell
+         -er}';                                                          
+      14 +  name        : String(200)  @mandatory @title: '{i18n>Destinat
+         +ionName}';                                                     
+      15 +  country     : String(100)  @mandatory @title: '{i18n>Country}
+         +';                                                             
+      16 +  city        : String(100)  @mandatory @title: '{i18n>City}'; 
+      17 +  region      : String(100)  @title: '{i18n>Region}';          
+      18 +  description : LargeString  @title: '{i18n>Description}';     
+      19  }
+      20  
+      20 -entity Travellers : cuid, managed {                            
+      21 -  userName  : String(255) @mandatory @title: '{i18n>UserName}';
+      22 -  firstName : String(255) @title: '{i18n>FirstName}';          
+      23 -  lastName  : String(255) @title: '{i18n>LastName}';           
+      24 -  contacts  : Composition of many Contacts on contacts.travelle
+         -r = $self @title: '{i18n>Contacts}';                           
+      25 -  gender    : String(10) @title: '{i18n>Gender}';              
+      26 -  age       : Integer @title: '{i18n>Age}';                    
+      27 -  status    : common.Status default 'A' @title: '{i18n>Status}'
+         -;                                                              
+      28 -  createdBy : String(40) @title: '{i18n>CreatedBy}';           
+      29 -  address   : Composition of Destinations @title: '{i18n>Addres
+         -s}';                                                           
+      30 -  vacations : Composition of many Vacations on vacations.travel
+         -ler = $self @title: '{i18n>Vacations}';                        
+      21 +annotate Destinations with @assert.unique: { name: [ name ] }; 
+      22 +                                                               
+      23 +entity Travellers : cuid {                                     
+      24 +  firstName   : String(80)  @mandatory @title: '{i18n>FirstName
+         +}';                                                            
+      25 +  lastName    : String(80)  @mandatory @title: '{i18n>LastName}
+         +';                                                             
+      26 +  virtual fullName : String(160) @Core.Computed @title: '{i18n>
+         +FullName}';                                                    
+      27 +  email       : String(120) @mandatory @title: '{i18n>Email}'; 
+      28 +  phone       : String(20)  @title: '{i18n>Phone}';            
+      29 +  addressType : common.AddressType   @title: '{i18n>AddressType
+         +}';                                                            
+      30 +  type        : common.TravellerType @mandatory @title: '{i18n>
+         +TravellerType}';                                               
+      31 +  status      : common.Status @mandatory default 'A' @title: '{
+         +i18n>Status}';                                                 
+      32 +  userID      : String(100) @mandatory @title: '{i18n>UserID}';
+      33 +  locations   : Composition of many TravelledLocations on locat
+         +ions.traveller = $self @title: '{i18n>Locations}';             
+      34 +  modifiedAt  : Timestamp @cds.on.update: $now @odata.etag @tit
+         +le: '{i18n>ModifiedAt}';                                       
+      35  }
+      36  
+      33 -annotate Travellers with {                                     
+      34 -  modifiedAt @odata.etag;                                      
+      37 +annotate Travellers with @assert.unique: { email: [ email ] }; 
+      38 +                                                               
+      39 +entity TravelledLocations : cuid {                             
+      40 +  traveller   : Association to Travellers @mandatory @title: '{
+         +i18n>Traveller}';                                              
+      41 +  destination : Association to Destinations @mandatory @title: 
+         +'{i18n>Destination}';                                          
+      42 +  travelFrom  : Date @mandatory @title: '{i18n>TravelFrom}';   
+      43 +  travelTo    : Date @mandatory @title: '{i18n>TravelTo}';     
+      44 +  notes       : LargeString @title: '{i18n>Notes}';            
+      45  }
+      46  
+      37 -entity Contacts : cuid {                                       
+      38 -  type      : common.AddressType @title: '{i18n>ContactType}'; 
+      39 -  address   : String(255) @title: '{i18n>Address}';            
+      40 -  traveller : Association to Travellers @title: '{i18n>Travelle
+         -r}';                                                           
+      47 +entity Users : cuid {                                          
+      48 +  loginName : String(120) @mandatory @title: '{i18n>LoginName}'
+         +;                                                              
+      49 +  firstName : String(80)  @mandatory @title: '{i18n>FirstName}'
+         +;                                                              
+      50 +  lastName  : String(80)  @mandatory @title: '{i18n>LastName}';
+      51 +  isLocked  : Boolean default false @title: '{i18n>IsLocked}'; 
+      52 +  createdAt : Timestamp @cds.on.insert: $now @title: '{i18n>Cre
+         +atedAt}';                                                      
+      53 +  roles     : Composition of many UserRoles on roles.user = $se
+         +lf @title: '{i18n>UserRoles}';                                 
+      54  }
+      55  
+      43 -entity Vacations : cuid {                                      
+      44 -  name        : String(255) @title: '{i18n>Name}';             
+      45 -  budget      : Decimal(10,2) @title: '{i18n>Budget}';         
+      46 -  currency    : Currency @title: '{i18n>Currency}';            
+      47 -  description : String(1024) @title: '{i18n>Description}';     
+      48 -  startsAt    : DateTime @title: '{i18n>StartsAt}';            
+      49 -  endsAt      : DateTime @title: '{i18n>EndsAt}';              
+      50 -  traveller   : Association to Travellers @title: '{i18n>Travel
+         -ler}';                                                         
+      56 +annotate Users with @assert.unique: { loginName: [ loginName ] 
+         +};                                                             
+      57 +                                                               
+      58 +entity Roles : cuid {                                          
+      59 +  code  : String(10) @mandatory @title: '{i18n>RoleCode}';     
+      60 +  name  : String(80) @mandatory @title: '{i18n>RoleName}';     
+      61 +  descr : String(255) @title: '{i18n>RoleDescription}';        
+      62  }
+      63  
+      53 -entity AppUsers : cuid, managed {                              
+      54 -  userName    : String(100) @mandatory @title: '{i18n>UserName}
+         -';                                                             
+      55 -  email       : String(255) @mandatory @title: '{i18n>Email}'; 
+      56 -  fullName    : String(255) @title: '{i18n>FullName}';         
+      57 -  role        : common.Role @title: '{i18n>Role}';             
+      58 -  isActive    : Boolean default true @title: '{i18n>IsActive}';
+      59 -  lastLoginAt : DateTime @title: '{i18n>LastLoginAt}';         
+      60 -  traveller   : Association to Travellers @title: '{i18n>Travel
+         -ler}';                                                         
+      64 +annotate Roles with @assert.unique: { code: [ code ] };        
+      65 +                                                               
+      66 +entity UserRoles : cuid {                                      
+      67 +  user : Association to Users @mandatory @title: '{i18n>User}';
+      68 +  role : Association to Roles @mandatory @title: '{i18n>Role}';
+      69  }
+
+● Now the service definitions.
+
+● Write(srv\catalog-service.cds)
+  ⎿  Wrote 53 lines to srv\catalog-service.cds
+      1 using { anubhav.claude as db } from '../db/schema';
+      2 using { anubhav.claude as common } from '../db/common';
+      3 
+      4 @requires: 'authenticated-user'
+      5 service CatalogService @(path: '/catalog') {
+      6 
+      7   entity Travellers         as projection on db.Travellers;
+      8   entity TravelledLocations as projection on db.TravelledLocation
+        s;
+      9   entity Destinations       as projection on db.Destinations;
+     … +51 lines (ctrl+o to expand)
+
+● Write(srv\user-management.cds)
+  ⎿  Wrote 19 lines to srv\user-management.cds
+       1 using { anubhav.claude as db } from '../db/schema';
+       2 
+       3 service UserManagement @(path: '/user-management') {
+       4 
+       5   entity Users     as projection on db.Users;
+       6   entity Roles     as projection on db.Roles;
+       7   entity UserRoles as projection on db.UserRoles;
+       8 
+       9   function lockUser(userId: String)   returns Boolean;
+      10   function unlockUser(userId: String) returns Boolean;
+     … +13 lines (ctrl+o to expand)
+
+● Update(srv\user-management.cds)
+  ⎿  Added 1 line, removed 2 lines
+      15    action unassignRole(userId: String, roleId: String) returns B
+          oolean;
+      16  }
+      17  
+      18 -annotate UserManagement with @requires: 'authenticated-user';  
+      19 -annotate UserManagement with @requires: 'Admin';               
+      18 +annotate UserManagement with @requires: ['authenticated-user', 
+         +'Admin'];                                                      
+
+● Write(srv\handlers\travellers.handler.js)
+  ⎿  Wrote 35 lines to srv\handlers\travellers.handler.js
+      1 module.exports = (srv) => {
+      2   const { Travellers } = srv.entities;
+      3 
+      4   srv.before('CREATE', Travellers, async (req) => {
+      5     const { firstName, lastName, email } = req.data;
+      7     if (!firstName || !firstName.trim() || !lastName || !lastName
+        .trim()) {
+      8       return req.error(400, 'First name and last name are require
+        d');
+      9     }
+     … +31 lines (ctrl+o to expand)
+
+● Write(srv\handlers\travelled-locations.handler.js)
+  ⎿  Wrote 37 lines to srv\handlers\travelled-locations.handler.js
+       1 module.exports = (srv) => {
+         ntities;
+       3 
+       4   srv.before('CREATE', TravelledLocations, async (req) => {
+         ler?.ID;
+       6     const destinationID = req.data.destination_ID || req.data.de
+       7     const { travelFrom, travelTo } = req.data;
+       8 
+       9     if (!travelFrom || !travelTo) {
+         d');
+     … +37 lines (ctrl+o to expand)
+
+● Write(srv\handlers\destinations.handler.js)
+  ⎿  Wrote 11 lines to srv\handlers\destinations.handler.js
+       1 module.exports = (srv) => {
+       2   const { Destinations } = srv.entities;
+       3 
+       5     const { name } = req.data;
+       6     if (!name) return;
+       7 
+       8     const existing = await SELECT.one.from(Destinations).where({
+       9     if (existing) return req.error(409, 'Destination with this n
+         ame already exists');
+      10   });
+     … +3 lines (ctrl+o to expand)
+
+● Write(srv\handlers\user-management.handler.js)
+  ⎿  Wrote 103 lines to srv\handlers\user-management.handler.js
+       1 const cds = require('@sap/cds');
+       2 
+       3 async function audit(action, details) {
+       4   try {
+       5     const auditLog = await cds.connect.to('audit-log');
+       7   } catch {
+       8     // audit logging is best-effort and must never block a write
+          operation
+       9   }
+      10 }
+     … +106 lines (ctrl+o to expand)
+
+● Write(srv\catalog-service.js)
+  ⎿  Wrote 5 lines to srv\catalog-service.js
+      1 module.exports = (srv) => {
+      2   require('./handlers/travellers.handler')(srv);
+      3   require('./handlers/travelled-locations.handler')(srv);
+      4   require('./handlers/destinations.handler')(srv);
+      5 };
+
+● Write(srv\user-management.js)
+  ⎿  Wrote 3 lines to srv\user-management.js
+      1 module.exports = (srv) => {
+      2   require('./handlers/user-management.handler')(srv);
+      3 };
+
+● Now regenerating the CSV seed data. First, delete the obsolete files.
+  Ran 1 shell command (ctrl+o to expand)
+
+● Write(db\data\anubhav.claude-Destinations.csv)
+  ⎿  Added 11 lines, removed 16 lines
+       1 -ID;address;city;postalCode;country;traveller_ID                
+       2 -c2d3e4f5-a6b7-4201-9201-cd1234580001;12 Rue de Rivoli;Paris;750
+         -01;France;a1b2c3d4-e5f6-4001-8001-ef1234560001                 
+       3 -c2d3e4f5-a6b7-4201-9201-cd1234580002;1-1 Chiyoda;Tokyo;100-0001
+         -;Japan;a1b2c3d4-e5f6-4002-8002-ef1234560002                    
+       4 -c2d3e4f5-a6b7-4201-9201-cd1234580003;350 5th Avenue;New York;10
+         -118;United States;a1b2c3d4-e5f6-4003-8003-ef1234560003         
+       5 -c2d3e4f5-a6b7-4201-9201-cd1234580004;Sheikh Zayed Road;Dubai;00
+         -000;United Arab Emirates;a1b2c3d4-e5f6-4004-8004-ef1234560004  
+       6 -c2d3e4f5-a6b7-4201-9201-cd1234580005;1 Raffles Place;Singapore;
+         -048616;Singapore;a1b2c3d4-e5f6-4005-8005-ef1234560005          
+       7 -c2d3e4f5-a6b7-4201-9201-cd1234580006;10 Oxford Street;London;W1
+         -D 1BS;United Kingdom;a1b2c3d4-e5f6-4006-8006-ef1234560006      
+       8 -c2d3e4f5-a6b7-4201-9201-cd1234580007;1 Circular Quay;Sydney;200
+         -0;Australia;a1b2c3d4-e5f6-4007-8007-ef1234560007               
+       9 -c2d3e4f5-a6b7-4201-9201-cd1234580008;Sukhumvit Road 21;Bangkok;
+         -10110;Thailand;a1b2c3d4-e5f6-4008-8008-ef1234560008            
+      10 -c2d3e4f5-a6b7-4201-9201-cd1234580009;Via del Corso 100;Rome;001
+         -86;Italy;a1b2c3d4-e5f6-4009-8009-ef1234560009                  
+      11 -c2d3e4f5-a6b7-4201-9201-cd1234580010;Jalan Pantai Kuta;Bali;803
+         -61;Indonesia;a1b2c3d4-e5f6-4010-8010-ef1234560010              
+      12 -c2d3e4f5-a6b7-4201-9201-cd1234580011;25 Avenue des Champs-Elyse
+         -es;Paris;75008;France;a1b2c3d4-e5f6-4002-8002-ef1234560002     
+      13 -c2d3e4f5-a6b7-4201-9201-cd1234580012;3-1 Shibuya;Tokyo;150-0002
+         -;Japan;a1b2c3d4-e5f6-4005-8005-ef1234560005                    
+      14 -c2d3e4f5-a6b7-4201-9201-cd1234580013;200 Central Park West;New 
+         -York;10024;United States;a1b2c3d4-e5f6-4009-8009-ef1234560009  
+      15 -c2d3e4f5-a6b7-4201-9201-cd1234580014;Palm Jumeirah Road;Dubai;0
+         -0000;United Arab Emirates;a1b2c3d4-e5f6-4001-8001-ef1234560001 
+      16 -c2d3e4f5-a6b7-4201-9201-cd1234580015;8 Marina Boulevard;Singapo
+         -re;018981;Singapore;a1b2c3d4-e5f6-4008-8008-ef1234560008       
+       1 +ID;name;country;city;region;description                        
+       2 +f1a2b3c4-d5e6-4501-9501-110000000001;Paris;France;Paris;Île-de-
+         +France;Whisk away to the City of Light for an unforgettable rom
+         +antic escape. Wander hand in hand along the Seine, savor candle
+         +lit dinners at charming bistros, and capture timeless memories 
+         +beneath the Eiffel Tower. Includes a private Louvre tour, a Sei
+         +ne river cruise at sunset, and a cooking class in Montmartre.  
+       3 +f1a2b3c4-d5e6-4501-9501-110000000002;Tokyo;Japan;Tokyo;Kanto;Ex
+         +perience Japan at its most magical during peak cherry blossom s
+         +eason. Wander vibrant neighborhoods, serene temple gardens, and
+         + iconic hanami spots including Ueno Park and Shinjuku Gyoen. In
+         +cludes a traditional tea ceremony, the historic Asakusa distric
+         +t, and a day trip to Mount Fuji.                               
+       4 +f1a2b3c4-d5e6-4501-9501-110000000003;New York;United States;New
+         + York;New York;Celebrate the holiday season in the city that ne
+         +ver sleeps. Enjoy a Broadway show, ice skating at Rockefeller C
+         +enter, and the dazzling Fifth Avenue window displays, plus worl
+         +d-class museums and panoramic skyline views from the Top of the
+         + Rock.                                                         
+       5 +f1a2b3c4-d5e6-4501-9501-110000000004;Dubai;United Arab Emirates
+         +;Dubai;Dubai;Discover the thrilling contrast of Dubai's glitter
+         +ing skyline and vast golden deserts. Combines a dune bashing sa
+         +fari, camel riding at sunset, an evening at a traditional Bedou
+         +in camp, the futuristic Burj Khalifa, the Gold Souk, and Jumeir
+         +ah Beach.                                                      
+       6 +f1a2b3c4-d5e6-4501-9501-110000000005;Singapore;Singapore;Singap
+         +ore;;Immerse yourself in Singapore's fusion of nature and futur
+         +istic architecture. Features the Gardens by the Bay light show,
+         + a rooftop infinity pool at Marina Bay Sands, guided food tours
+         + through Chinatown and Little India, and Sentosa Island.       
+       7 +f1a2b3c4-d5e6-4501-9501-110000000006;London;United Kingdom;Lond
+         +on;England;Step into centuries of history on this heritage tour
+         +. Visit the Tower of London, Westminster Abbey, and Buckingham 
+         +Palace's State Rooms, cruise the Thames, explore the British Mu
+         +seum, and savor traditional afternoon tea.                     
+       8 +f1a2b3c4-d5e6-4501-9501-110000000007;Sydney;Australia;Sydney;Ne
+         +w South Wales;Discover the natural beauty and vibrant energy of
+         + Sydney. Climb the Sydney Harbour Bridge, tour the Opera House,
+         + relax on Bondi Beach, and venture to the Blue Mountains for br
+         +eathtaking views and wildlife encounters.                      
+       9 +f1a2b3c4-d5e6-4501-9501-110000000008;Bangkok;Thailand;Bangkok;;
+         +Dive into the vibrant flavors and bustling energy of Thailand's
+         + capital. Sample authentic street food across Chinatown, explor
+         +e the ornate Grand Palace, cruise the Chao Phraya River, and vi
+         +sit a bustling floating market.                                
+      10 +f1a2b3c4-d5e6-4501-9501-110000000009;Rome;Italy;Rome;Lazio;Walk
+         + through thousands of years of history. Explore the Colosseum, 
+         +the ancient Roman Forum, the Sistine Chapel and Vatican Museums
+         +, toss a coin into the Trevi Fountain, and take a day trip to t
+         +he ruins of Pompeii.                                           
+      11 +f1a2b3c4-d5e6-4501-9501-110000000010;Bali;Indonesia;Bali;;Unwin
+         +d in paradise on the pristine sands of Kuta and Nusa Dua, enjoy
+         + sunrise yoga overlooking rice terraces in Ubud, snorkel among 
+         +vibrant coral reefs, and visit ancient temples like Tanah Lot a
+         +nd Uluwatu.                                                    
+
+● Write(db\data\anubhav.claude-Travellers.csv)
+  ⎿  Added 11 lines, removed 11 lines
+       1 -ID;userName;firstName;lastName;gender;age;status_code;createdBy
+         -;createdAt;modifiedAt                                          
+       2 -a1b2c3d4-e5f6-4001-8001-ef1234560001;rajesh.kumar;Rajesh;Kumar;
+         -Male;34;A;agent.patel@travelapp.com;2025-11-02T09:15:00Z;2026-0
+         -6-10T14:30:00Z                                                 
+       3 -a1b2c3d4-e5f6-4002-8002-ef1234560002;priya.sharma;Priya;Sharma;
+         -Female;28;A;agent.patel@travelapp.com;2025-12-14T11:00:00Z;2026
+         --07-22T10:05:00Z                                               
+       4 -a1b2c3d4-e5f6-4003-8003-ef1234560003;john.smith;John;Smith;Male
+         -;45;A;agent.wilson@travelapp.com;2025-09-20T08:45:00Z;2026-05-1
+         -8T16:20:00Z                                                    
+       5 -a1b2c3d4-e5f6-4004-8004-ef1234560004;emily.johnson;Emily;Johnso
+         -n;Female;31;I;agent.wilson@travelapp.com;2025-10-05T13:30:00Z;2
+         -026-04-01T09:10:00Z                                            
+       6 -a1b2c3d4-e5f6-4005-8005-ef1234560005;hans.mueller;Hans;Mueller;
+         -Male;52;A;agent.jones@travelapp.com;2025-08-11T07:50:00Z;2026-0
+         -8-02T12:00:00Z                                                 
+       7 -a1b2c3d4-e5f6-4006-8006-ef1234560006;sofia.rossi;Sofia;Rossi;Fe
+         -male;27;A;agent.jones@travelapp.com;2026-01-09T10:20:00Z;2026-0
+         -7-30T15:45:00Z                                                 
+       8 -a1b2c3d4-e5f6-4007-8007-ef1234560007;yuki.tanaka;Yuki;Tanaka;Fe
+         -male;24;A;agent.patel@travelapp.com;2026-02-17T06:40:00Z;2026-0
+         -8-19T11:25:00Z                                                 
+       9 -a1b2c3d4-e5f6-4008-8008-ef1234560008;wei.chen;Wei;Chen;Male;39;
+         -I;agent.wilson@travelapp.com;2025-07-28T14:10:00Z;2026-03-15T08
+         -:55:00Z                                                        
+      10 -a1b2c3d4-e5f6-4009-8009-ef1234560009;carlos.garcia;Carlos;Garci
+         -a;Male;61;A;agent.jones@travelapp.com;2025-06-30T09:05:00Z;2026
+         --06-27T13:40:00Z                                               
+      11 -a1b2c3d4-e5f6-4010-8010-ef1234560010;aisha.khan;Aisha;Khan;Fema
+         -le;22;A;agent.patel@travelapp.com;2026-03-22T12:15:00Z;2026-09-
+         -01T17:00:00Z                                                   
+       1 +ID;firstName;lastName;email;phone;addressType_code;type_code;st
+         +atus_code;userID;modifiedAt                                    
+       2 +a1b2c3d4-e5f6-4001-8001-ef1234560001;Rajesh;Kumar;rajesh.kumar@
+         +gmail.com;+91-98765-43210;H;FF;A;rajesh.kumar;2026-06-10T14:30:
+         +00Z                                                            
+       3 +a1b2c3d4-e5f6-4002-8002-ef1234560002;Priya;Sharma;priya.sharma@
+         +yahoo.com;+91-91234-56789;P;EX;A;priya.sharma;2026-07-22T10:05:
+         +00Z                                                            
+       4 +a1b2c3d4-e5f6-4003-8003-ef1234560003;John;Smith;john.smith@outl
+         +ook.com;+1-212-555-0147;H;ST;A;john.smith;2026-05-18T16:20:00Z 
+       5 +a1b2c3d4-e5f6-4004-8004-ef1234560004;Emily;Johnson;emily.johnso
+         +n@gmail.com;+1-310-555-0192;P;FF;I;emily.johnson;2026-04-01T09:
+         +10:00Z                                                         
+       6 +a1b2c3d4-e5f6-4005-8005-ef1234560005;Hans;Mueller;hans.mueller@
+         +web.de;+49-30-12345678;H;EX;A;hans.mueller;2026-08-02T12:00:00Z
+       7 +a1b2c3d4-e5f6-4006-8006-ef1234560006;Sofia;Rossi;sofia.rossi@li
+         +bero.it;+39-06-98765432;P;ST;A;sofia.rossi;2026-07-30T15:45:00Z
+       8 +a1b2c3d4-e5f6-4007-8007-ef1234560007;Yuki;Tanaka;yuki.tanaka@gm
+         +ail.com;+81-3-1234-5678;H;FF;A;yuki.tanaka;2026-08-19T11:25:00Z
+       9 +a1b2c3d4-e5f6-4008-8008-ef1234560008;Wei;Chen;wei.chen@qq.com;+
+         +86-138-0013-8000;P;EX;I;wei.chen;2026-03-15T08:55:00Z          
+      10 +a1b2c3d4-e5f6-4009-8009-ef1234560009;Carlos;Garcia;carlos.garci
+         +a@gmail.com;+34-91-1234567;H;ST;A;carlos.garcia;2026-06-27T13:4
+         +0:00Z                                                          
+      11 +a1b2c3d4-e5f6-4010-8010-ef1234560010;Aisha;Khan;aisha.khan@hotm
+         +ail.com;+92-300-1234567;P;FF;A;aisha.khan;2026-09-01T17:00:00Z 
+
+● Write(db\data\anubhav.claude-TravelledLocations.csv)
+  ⎿  Wrote 16 lines to db\data\anubhav.claude-TravelledLocations.csv
+      1 ID;traveller_ID;destination_ID;travelFrom;travelTo;notes
+      2 d3e4f5a6-b7c8-4301-9301-ef1234590001;a1b2c3d4-e5f6-4001-8001-ef12
+        34560001;f1a2b3c4-d5e6-4501-9501-110000000001;2026-10-05;2026-10-
+      3 d3e4f5a6-b7c8-4301-9301-ef1234590002;a1b2c3d4-e5f6-4002-8002-ef12
+        34560002;f1a2b3c4-d5e6-4501-9501-110000000002;2027-03-20;2027-03-
+        28;Tokyo Cherry Blossom Trip — budget 6400.00 JPY.
+      4 d3e4f5a6-b7c8-4301-9301-ef1234590003;a1b2c3d4-e5f6-4003-8003-ef12
+        26;New York City Lights Getaway — budget 12500.00 USD.
+      5 d3e4f5a6-b7c8-4301-9301-ef1234590004;a1b2c3d4-e5f6-4004-8004-ef12
+        34560004;f1a2b3c4-d5e6-4501-
+     … +36 lines (ctrl+o to expand)
+
+● Write(db\data\anubhav.claude-TravellerTypes.csv)
+  ⎿  Wrote 4 lines to db\data\anubhav.claude-TravellerTypes.csv
+      1 code;name;descr
+      2 FF;Frequent Flyer;Traveller with frequent flyer status entitled t
+        o priority benefits
+      3 EX;Executive;Executive-tier traveller with premium travel privile
+        ges
+      4 ST;Standard;Standard traveller classification
+
+● Write(db\data\anubhav.claude-TravellerTypes_texts.csv)
+  ⎿  Wrote 7 lines to db\data\anubhav.claude-TravellerTypes_texts.csv
+      1 locale;code;name;descr
+      2 en;FF;Frequent Flyer;Traveller with frequent flyer status entitle
+        d to priority benefits
+      3 en;EX;Executive;Executive-tier traveller with premium travel priv
+        ileges
+      5 de;FF;Vielflieger;Reisender mit Vielflieger-Status und Prioritäts
+        vorteilen
+      6 de;EX;Führungskraft;Reisender der Executive-Stufe mit Premium-Rei
+        sevorteilen
+      7 de;ST;Standard;Standardmäßige Reisendenklassifizierung
+     … +1 line (ctrl+o to expand)
+
+● Write(db\data\anubhav.claude-Roles.csv)
+  ⎿  Added 4 lines, removed 4 lines
+      1 -code;name;descr                                                 
+      2 -ADMIN;Administrator;Full system access                          
+      3 -TRAVELLER;Traveller;Self-service traveller access               
+      4 -AGENT;Travel Agent;Agent access for managing travellers         
+      1 +ID;code;name;descr                                              
+      2 +b6b6b6b6-0001-4701-9701-330000000001;ADMIN;Administrator;Full sy
+        +stem access                                                     
+      3 +b6b6b6b6-0002-4701-9701-330000000002;TRAVELLER;Traveller;Self-se
+        +rvice traveller access                                          
+      4 +b6b6b6b6-0003-4701-9701-330000000003;AGENT;Travel Agent;Agent ac
+        +cess for managing travellers                                    
+
+● Write(db\data\anubhav.claude-Users.csv)
+  ⎿  Wrote 13 lines to db\data\anubhav.claude-Users.csv
+      1 ID;loginName;firstName;lastName;isLocked;createdAt
+        yer;false;2025-05-01T09:00:00Z
+      3 e4f5a6b7-c8d9-4401-9401-fa1234600002;admin2@travelapp.com;David;P
+        ark;false;2025-05-01T09:05:00Z
+        han;Patel;false;2025-06-10T10:00:00Z
+      5 e4f5a6b7-c8d9-4401-9401-fa1234600004;agent.wilson@travelapp.com;S
+      6 e4f5a6b7-c8d9-4401-9401-fa1234600005;agent.jones@travelapp.com;Mi
+        chael;Jones;true;2025-07-01T08:00:00Z
+      7 e4f5a6b7-c8d9-4401-9401-fa1234600006;rajesh.kumar@gmail.com;Rajes
+      8 e4f5a6b7-c8d9-4401-9401-fa1234600007;p
+     … +15 lines (ctrl+o to expand)
+
+● Write(db\data\anubhav.claude-UserRoles.csv)
+  ⎿  Wrote 13 lines to db\data\anubhav.claude-UserRoles.csv
+      1 ID;user_ID;role_ID
+        34600001;b6b6b6b6-0001-4701-9701-330000000001
+      3 c7c7c7c7-0002-4801-9801-440000000002;e4f5a6b7-c8d9-4401-9401-fa12
+        34600002;b6b6b6b6-0001-4701-9701-330000000001
+        34600003;b6b6b6b6-0003-4701-9701-330000000003
+      5 c7c7c7c7-0004-4801-9801-440000000004;e4f5a6b7-c8d9-4401-9401-fa12
+      6 c7c7c7c7-0005-4801-9801-440000000005;e4f5a6b7-c8d9-4401-9401-fa12
+        34600005;b6b6b6b6-0003-4701-9701-330000000003
+      7 c7c7c7c7-0006-4801-9801-440000000006;e4f5a6b7-c8d9-4401-9401-fa12
+      8 c7c7c
+     … +15 lines (ctrl+o to expand)
+
+● CSV data is done. Now updating package.json.
+
+● Update(package.json)
+  ⎿  Added 28 lines, removed 3 lines
+       4    "description": "A simple CAP project.",
+       5    "dependencies": {
+       6      "@sap/cds": "^9",
+       7 +    "@sap/audit-logging": "^6",                                
+       8      "express": "^4"
+       9    },
+      10    "devDependencies": {
+      10 -    "@cap-js/sqlite": "^2"                                     
+      11 +    "@cap-js/sqlite": "^2",                                    
+      12 +    "jest": "^29"                                              
+      13    },
+      14    "scripts": {
+      13 -    "start": "cds-serve"                                       
+      15 +    "start": "cds-serve",                                      
+      16 +    "test": "jest"                                             
+      17    },
+      15 -  "private": true                                              
+      18 +  "private": true,                                             
+      19 +  "cds": {                                                     
+      20 +    "requires": {                                              
+      21 +      "auth": {                                                
+      22 +        "kind": "mocked",                                      
+      23 +        "users": {                                             
+      24 +          "alice.admin": {                                     
+      25 +            "password": "admin123",                            
+      26 +            "roles": [ "Admin", "authenticated-user" ]         
+      27 +          },                                                   
+      28 +          "rajesh.kumar": {                                    
+      29 +            "password": "traveller123",                        
+      30 +            "roles": [ "Traveller", "authenticated-user" ]     
+      31 +          }                                                    
+      32 +        }                                                      
+      33 +      },                                                       
+      34 +      "[production]": {                                        
+      35 +        "auth": {                                              
+      36 +          "kind": "xsuaa"                                      
+      37 +        }                                                      
+      38 +      }                                                        
+      39 +    }                                                          
+      40 +  }                                                            
+      41  }
+      42   No newline at end of file
+
+● Write(db\i18n\i18n.properties)
+  ⎿  Added 34 lines, removed 34 lines
+       1  #
+       2  # i18n.properties
+       3  #
+       4 -# Default (English) text elements for the Vacation & Traveller 
+       5 -# Management data model field @title annotations.              
+       4 +# Default (English) text elements for the Travel Management    
+       5 +# data model field @title annotations.                         
+       6  #
+       7  
+       8  #
+       9  # Common / reusable code list fields
+      10  #
+      11  AddressTypeCode        = Address Type Code
+      12 -TravellerStatusCode     = Traveller Status Code                
+      12 +TravellerStatusCode    = Traveller Status Code                 
+      13 +TravellerTypeCode      = Traveller Type Code                   
+      14  RoleCode                = Role Code
+      15  
+      16  #
+      17  # Traveller fields
+      18  #
+      18 -UserName                = User Name                            
+      19  FirstName               = First Name
+      20  LastName                = Last Name
+      21 -Gender                  = Gender                               
+      22 -Age                     = Age                                  
+      21 +FullName                = Full Name                            
+      22 +Email                   = Email                                
+      23 +Phone                   = Phone                                
+      24 +AddressType             = Address Type                         
+      25 +TravellerType           = Traveller Type                       
+      26  Status                  = Status
+      24 -CreatedBy               = Created By                           
+      25 -Contacts                = Contacts                             
+      26 -Vacations               = Vacations                            
+      27 +UserID                  = User ID                              
+      28 +Locations               = Visited Locations                    
+      29 +ModifiedAt               = Modified At                         
+      30  
+      31  #
+      29 -# Destination / address fields                                 
+      32 +# Shared / relationship fields                                 
+      33  #
+      31 -Address                 = Address                              
+      32 -City                    = City                                 
+      33 -PostalCode              = Postal Code                          
+      34 -Country                 = Country                              
+      34 +Traveller               = Traveller                            
+      35 +Destination              = Destination                         
+      36  
+      37  #
+      37 -# Contact fields                                               
+      38 +# Destination fields                                           
+      39  #
+      39 -ContactType             = Contact Type                         
+      40 +DestinationName          = Destination Name                    
+      41 +Country                  = Country                             
+      42 +City                     = City                                
+      43 +Region                   = Region                              
+      44 +Description              = Description                         
+      45  
+      46  #
+      42 -# Vacation fields                                              
+      47 +# Travelled location fields                                    
+      48  #
+      44 -Name                    = Name                                 
+      45 -Budget                  = Budget                               
+      46 -Currency                = Currency                             
+      47 -Description             = Description                          
+      48 -StartsAt                = Starts At                            
+      49 -EndsAt                  = Ends At                              
+      49 +TravelFrom               = Travel From                         
+      50 +TravelTo                 = Travel To                           
+      51 +Notes                    = Notes                               
+      52  
+      53  #
+      52 -# Traveller / App user shared reference                        
+      54 +# User management fields                                       
+      55  #
+      54 -Traveller               = Traveller                            
+      55 -                                                               
+      56 -#                                                              
+      57 -# App user fields                                              
+      58 -#                                                              
+      59 -Email                   = Email                                
+      60 -FullName                = Full Name                            
+      61 -Role                    = Role                                 
+      62 -IsActive                = Is Active                            
+      63 -LastLoginAt             = Last Login At                        
+      56 +LoginName                = Login Name                          
+      57 +IsLocked                 = Is Locked                           
+      58 +CreatedAt                = Created At                          
+      59 +User                     = User                                
+      60 +Role                     = Role                                
+      61 +UserRoles                = User Roles                          
+      62 +RoleName                 = Role Name                           
+      63 +RoleDescription          = Role Description                    
+
+● Write(db\i18n\i18n_en.properties)
+  ⎿  Added 34 lines, removed 34 lines
+       1  #
+       2  # i18n_en.properties
+       3  #
+       4 -# Explicit English (en) text elements for the Vacation & Travel
+         -ler                                                            
+       5 -# Management data model field @title annotations.              
+       4 +# Explicit English (en) text elements for the Travel Management
+       5 +# data model field @title annotations.                         
+       6  #
+       7  
+       8  #
+       9  # Common / reusable code list fields
+      10  #
+      11  AddressTypeCode        = Address Type Code
+      12 -TravellerStatusCode     = Traveller Status Code                
+      12 +TravellerStatusCode    = Traveller Status Code                 
+      13 +TravellerTypeCode      = Traveller Type Code                   
+      14  RoleCode                = Role Code
+      15  
+      16  #
+      17  # Traveller fields
+      18  #
+      18 -UserName                = User Name                            
+      19  FirstName               = First Name
+      20  LastName                = Last Name
+      21 -Gender                  = Gender                               
+      22 -Age                     = Age                                  
+      21 +FullName                = Full Name                            
+      22 +Email                   = Email                                
+      23 +Phone                   = Phone                                
+      24 +AddressType             = Address Type                         
+      25 +TravellerType           = Traveller Type                       
+      26  Status                  = Status
+      24 -CreatedBy               = Created By                           
+      25 -Contacts                = Contacts                             
+      26 -Vacations               = Vacations                            
+      27 +UserID                  = User ID                              
+      28 +Locations               = Visited Locations                    
+      29 +ModifiedAt               = Modified At                         
+      30  
+      31  #
+      29 -# Destination / address fields                                 
+      32 +# Shared / relationship fields                                 
+      33  #
+      31 -Address                 = Address                              
+      32 -City                    = City                                 
+      33 -PostalCode              = Postal Code                          
+      34 -Country                 = Country                              
+      34 +Traveller               = Traveller                            
+      35 +Destination              = Destination                         
+      36  
+      37  #
+      37 -# Contact fields                                               
+      38 +# Destination fields                                           
+      39  #
+      39 -ContactType             = Contact Type                         
+      40 +DestinationName          = Destination Name                    
+      41 +Country                  = Country                             
+      42 +City                     = City                                
+      43 +Region                   = Region                              
+      44 +Description              = Description                         
+      45  
+      46  #
+      42 -# Vacation fields                                              
+      47 +# Travelled location fields                                    
+      48  #
+      44 -Name                    = Name                                 
+      45 -Budget                  = Budget                               
+      46 -Currency                = Currency                             
+      47 -Description             = Description                          
+      48 -StartsAt                = Starts At                            
+      49 -EndsAt                  = Ends At                              
+      49 +TravelFrom               = Travel From                         
+      50 +TravelTo                 = Travel To                           
+      51 +Notes                    = Notes                               
+      52  
+      53  #
+      52 -# Traveller / App user shared reference                        
+      54 +# User management fields                                       
+      55  #
+      54 -Traveller               = Traveller                            
+      55 -                                                               
+      56 -#                                                              
+      57 -# App user fields                                              
+      58 -#                                                              
+      59 -Email                   = Email                                
+      60 -FullName                = Full Name                            
+      61 -Role                    = Role                                 
+      62 -IsActive                = Is Active                            
+      63 -LastLoginAt             = Last Login At                        
+      56 +LoginName                = Login Name                          
+      57 +IsLocked                 = Is Locked                           
+      58 +CreatedAt                = Created At                          
+      59 +User                     = User                                
+      60 +Role                     = Role                                
+      61 +UserRoles                = User Roles                          
+      62 +RoleName                 = Role Name                           
+      63 +RoleDescription          = Role Description                    
+
+● Write(db\i18n\i18n_de.properties)
+  ⎿  Added 30 lines, removed 31 lines
+      2  # i18n_de.properties
+      3  #
+      4  # Deutsche (de) Texte für die Feld-@title-Annotationen des
+      5 -# Datenmodells der Urlaubs- und Reisendenverwaltung             
+      6 -# (Vacation & Traveller Management).                            
+      5 +# Datenmodells der Reiseverwaltung (Travel Management).         
+      6  #
+      7  
+      8  #
+     ...
+      10  #
+      11  AddressTypeCode      = Adresstypcode
+      12  TravellerStatusCode  = Reisendenstatuscode
+      13 +TravellerTypeCode    = Reisendentypcode                        
+      14  RoleCode             = Rollencode
+      15  
+      16  #
+      17  # Reisende-Felder
+      18  #
+      19 -UserName             = Benutzername                            
+      19  FirstName            = Vorname
+      20  LastName             = Nachname
+      22 -Gender               = Geschlecht                              
+      23 -Age                  = Alter                                   
+      21 +FullName             = Vollständiger Name                      
+      22 +Email                = E-Mail                                  
+      23 +Phone                = Telefon                                 
+      24 +AddressType          = Adresstyp                               
+      25 +TravellerType        = Reisendentyp                            
+      26  Status               = Status
+      25 -CreatedBy            = Erstellt von                            
+      26 -Contacts             = Kontakte                                
+      27 -Vacations            = Urlaube                                 
+      27 +UserID               = Benutzer-ID                             
+      28 +Locations            = Besuchte Orte                           
+      29 +ModifiedAt           = Geändert am                             
+      30  
+      31  #
+      30 -# Reiseziel- / Adressfelder                                    
+      32 +# Gemeinsame / Beziehungsfelder                                
+      33  #
+      32 -Address              = Adresse                                 
+      33 -City                 = Stadt                                   
+      34 -PostalCode           = Postleitzahl                            
+      35 -Country              = Land                                    
+      34 +Traveller            = Reisender                               
+      35 +Destination          = Reiseziel                               
+      36  
+      37  #
+      38 -# Kontaktfelder                                                
+      38 +# Reiseziel-Felder                                             
+      39  #
+      40 -ContactType          = Kontakttyp                              
+      41 -                                                               
+      42 -#                                                              
+      43 -# Urlaubsfelder                                                
+      44 -#                                                              
+      45 -Name                 = Name                                    
+      46 -Budget               = Budget                                  
+      47 -Currency             = Währung                                 
+      40 +DestinationName      = Reisezielname                           
+      41 +Country              = Land                                    
+      42 +City                 = Stadt                                   
+      43 +Region               = Region                                  
+      44  Description          = Beschreibung
+      49 -StartsAt             = Beginnt am                              
+      50 -EndsAt               = Endet am                                
+      45  
+      46  #
+      53 -# Gemeinsame Referenz für Reisende / App-Benutzer              
+      47 +# Reiseverlaufsfelder                                          
+      48  #
+      55 -Traveller            = Reisender                               
+      49 +TravelFrom           = Reise von                               
+      50 +TravelTo             = Reise bis                               
+      51 +Notes                = Notizen                                 
+      52  
+      53  #
+      58 -# App-Benutzer-Felder                                          
+      54 +# Benutzerverwaltungsfelder                                    
+      55  #
+      60 -Email                = E-Mail                                  
+      61 -FullName             = Vollständiger Name                      
+      56 +LoginName            = Anmeldename                             
+      57 +IsLocked             = Gesperrt                                
+      58 +CreatedAt            = Erstellt am                             
+      59 +User                 = Benutzer                                
+      60  Role                 = Rolle
+      63 -IsActive             = Aktiv                                   
+      64 -LastLoginAt          = Letzte Anmeldung am                     
+      61 +UserRoles            = Benutzerrollen                          
+      62 +RoleName             = Rollenname                              
+      63 +RoleDescription      = Rollenbeschreibung                      
+
+● Write(db\i18n\i18n_hi.properties)
+  ⎿  Added 31 lines, removed 31 lines
+      1  #
+      2  # i18n_hi.properties
+      3  #
+      4 -# छुट्टी और यात्री प्रबंधन (Vacation & Traveller Management) डेटा मॉडल के   
+      5 -# फ़ील्ड @title एनोटेशन हेतु हिन्दी (hi) पाठ तत्व।                          
+      4 +# यात्रा प्रबंधन (Travel Management) डेटा मॉडल के फ़ील्ड @title             
+      5 +# एनोटेशन हेतु हिन्दी (hi) पाठ तत्व।                                     
+      6  #
+      7  
+      8  #
+     ...
+      10  #
+      11  AddressTypeCode      = पता प्रकार कोड
+      12  TravellerStatusCode  = यात्री स्थिति कोड
+      13 +TravellerTypeCode    = यात्री प्रकार कोड                             
+      14  RoleCode             = भूमिका कोड
+      15  
+      16  #
+      17  # यात्री फ़ील्ड
+      18  #
+      18 -UserName             = उपयोगकर्ता नाम                              
+      19  FirstName            = पहला नाम
+      20  LastName             = अंतिम नाम
+      21 -Gender               = लिंग                                      
+      22 -Age                  = आयु                                      
+      21 +FullName             = पूरा नाम                                   
+      22 +Email                = ईमेल                                     
+      23 +Phone                = फ़ोन                                      
+      24 +AddressType          = पता प्रकार                                 
+      25 +TravellerType        = यात्री प्रकार                                
+      26  Status               = स्थिति
+      24 -CreatedBy            = द्वारा बनाया गया                              
+      25 -Contacts             = संपर्क                                    
+      26 -Vacations            = छुट्टियाँ                                    
+      27 +UserID               = उपयोगकर्ता आईडी                             
+      28 +Locations            = भ्रमण किए गए स्थान                          
+      29 +ModifiedAt           = संशोधित समय                                
+      30  
+      31  #
+      29 -# गंतव्य / पता फ़ील्ड                                                
+      32 +# साझा / संबंध फ़ील्ड                                                 
+      33  #
+      31 -Address              = पता                                      
+      32 -City                 = शहर                                     
+      33 -PostalCode           = डाक कोड                                   
+      34 -Country              = देश                                      
+      34 +Traveller            = यात्री                                     
+      35 +Destination          = गंतव्य                                    
+      36  
+      37  #
+      37 -# संपर्क फ़ील्ड                                                     
+      38 +# गंतव्य फ़ील्ड                                                     
+      39  #
+      39 -ContactType          = संपर्क प्रकार                               
+      40 -                                                               
+      41 -#                                                              
+      42 -# छुट्टी फ़ील्ड                                                      
+      43 -#                                                              
+      44 -Name                 = नाम                                      
+      45 -Budget               = बजट                                     
+      46 -Currency             = मुद्रा                                     
+      40 +DestinationName      = गंतव्य नाम                                 
+      41 +Country              = देश                                      
+      42 +City                 = शहर                                     
+      43 +Region               = क्षेत्र                                    
+      44  Description          = विवरण
+      48 -StartsAt             = आरंभ समय                                 
+      49 -EndsAt               = समाप्ति समय                                
+      45  
+      46  #
+      52 -# यात्री / ऐप उपयोगकर्ता साझा संदर्भ                                     
+      47 +# भ्रमण विवरण फ़ील्ड                                                
+      48  #
+      54 -Traveller            = यात्री                                     
+      49 +TravelFrom           = यात्रा प्रारंभ                                
+      50 +TravelTo             = यात्रा समाप्ति                                
+      51 +Notes                = टिप्पणियाँ                                   
+      52  
+      53  #
+      57 -# ऐप उपयोगकर्ता फ़ील्ड                                               
+      54 +# उपयोगकर्ता प्रबंधन फ़ील्ड                                            
+      55  #
+      59 -Email                = ईमेल                                     
+      60 -FullName             = पूरा नाम                                   
+      56 +LoginName            = लॉगिन नाम                                  
+      57 +IsLocked             = लॉक है                                    
+      58 +CreatedAt            = बनाया गया समय                              
+      59 +User                 = उपयोगकर्ता                                 
+      60  Role                 = भूमिका
+      62 -IsActive             = सक्रिय है                                  
+      63 -LastLoginAt          = अंतिम लॉगिन समय                             
+      61 +UserRoles            = उपयोगकर्ता भूमिकाएँ                            
+      62 +RoleName             = भूमिका नाम                                  
+      63 +RoleDescription      = भूमिका विवरण                                
+
+● Skill(cap-lang-check)
+  ⎿  Successfully loaded skill
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● i18n check: all four locale files have 33 keys with perfect parity (no
+  missing/orphan/empty keys). Moving on.
+
+● Write(test\catalog-travellers.test.js)
+  ⎿  Wrote 97 lines to test\catalog-travellers.test.js
+       1 const cds = require('@sap/cds');
+         ;
+       3 
+         n123' } };
+       5 const traveller = { auth: { username: 'rajesh.kumar', password: 
+       6 
+       7 describe('CatalogService - Travellers', () => {
+       9   it('returns only the own row for the Traveller role', async ()
+          => {
+         raveller);
+     … +101 lines (ctrl+o to expand)
+
+● Write(test\catalog-travelled-locations.test.js)
+  ⎿  Wrote 86 lines to test\catalog-travelled-locations.test.js
+      1 const cds = require('@sap/cds');
+      2 const { GET, POST, DELETE, expect } = cds.test(__dirname + '/..')
+        ;
+      4 const admin = { auth: { username: 'alice.admin', password: 'admin
+        123' } };
+      5 const traveller = { auth: { username: 'rajesh.kumar', password: '
+        traveller123' } };
+      7 const RAJESH_ID = 'a1b2c3d4-e5f6-4001-8001-ef1234560001';
+      8 const PARIS_ID = 'f1a2b3c4-d5e6-4501-9501-110000000001';
+      9 const TOKYO_ID = 'f1a2b3c4-d5e6-4501-9501-110000000002';
+     … +85 lines (ctrl+o to expand)
+● Write(test\catalog-destinations-and-vh.test.js)
+  ⎿  Wrote 53 lines to test\catalog-destinations-and-vh.test.js
+       1 const cds = require('@sap/cds');
+       2 const { GET, POST, PATCH, DELETE, expect } = cds.test(__dirname 
+         + '/..');
+       4 const admin = { auth: { username: 'alice.admin', password: 'admi
+         n123' } };
+       5 
+       6 describe('CatalogService - Destinations & value helps', () => {
+       8   it('creates a destination with 201', async () => {
+       9     const res = await POST('/odata/v4/catalog/Destinations', {
+      10       name: 'Test City',
+     … +53 lines (ctrl+o to expand)
+
+● Write(test\user-management.test.js)
+  ⎿  Wrote 91 lines to test\user-management.test.js
+       1 const cds = require('@sap/cds');
+       2 const { GET, POST, expect } = cds.test(__dirname + '/..');
+       4 const admin = { auth: { username: 'alice.admin', password: 'admi
+         n123' } };
+       5 const traveller = { auth: { username: 'rajesh.kumar', password: 
+       6 
+       7 const TRAVELLER_ROLE_ID = 'b6b6b6b6-0002-4701-9701-330000000002'
+         ;
+       9 
+      10 describe('UserManagement', () => {
+     … +98 lines (ctrl+o to expand)
+
+● Write(test\batch.test.js)
+  ⎿  Wrote 48 lines to test\batch.test.js
+      1 const cds = require('@sap/cds');
+      2 const { POST, expect } = cds.test(__dirname + '/..');
+      3 
+      4 const admin = { auth: { username: 'alice.admin', password: 'admin
+        123' } };
+      5 
+      6 const PRIYA_ID = 'a1b2c3d4-e5f6-4002-8002-ef1234560002';
+      7 const PARIS_ID = 'f1a2b3c4-d5e6-4501-9501-110000000001';
+      8 const TOKYO_ID = 'f1a2b3c4-d5e6-4501-9501-110000000002';
+      9 const NEW_YORK_ID = 'f1a2b3c4-d5e6-4501-9501-110000000003';
+     … +51 lines (ctrl+o to expand)
+
+● Now the .http manual test file with the spec's §9 $expand reference calls.
+
+● Write(test\test.http)
+  ⎿  Wrote 35 lines to test\test.http
+       1 ### Travel Management CAP App — manual $expand verification
+         h the REST Client / Thunder Client VS Code extension).
+       3 ### Mock users are defined in package.json under cds.requires.au
+         th.users.
+       5 @baseUrl = http://localhost:4004
+       6 @admin = alice.admin:admin123
+       8 
+       9 ### 9.1 Travellers with all related data — expand locations and 
+         each location's destination
+         xpand=destination)
+     … +36 lines (ctrl+o to expand)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Install succeeded (just an engine-version warning, non-blocking). Now adding
+  the OData V2 proxy.
+
+  Ran 5 shell commands (ctrl+o to expand)
+
+● Switching to the actively-maintained adapter package since the one npm install
+  picked is deprecated.
+
+  Searched for 1 pattern, ran 1 shell command (ctrl+o to expand)
+
+● Write(server.js)
+  ⎿  Wrote 7 lines to server.js
+      1 const cds = require('@sap/cds');
+      2 
+      3 cds.on('bootstrap', (app) => {
+      4   app.use(require('@cap-js-community/odata-v2-adapter')());
+      5 });
+      6 
+      7 module.exports = cds.server;
+
+● cds add odata-v2-proxy doesn't exist as a facet in @sap/cds v9 — I installed
+  @cap-js-community/odata-v2-adapter (the maintained replacement) and mounted it
+  in server.js instead, which achieves the same /odata/v2/* parity requirement.
+  Now running verification: cds compile first as a quick sanity check before
+  the full cds watch.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● That error just means both services compiled fine — it just needs -s all to
+  pick which to emit. Good sign; models parse cleanly.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Both services compile to valid EDMX with no errors. Now let's try a real cds 
+  watch startup to catch runtime issues (CSV loading, handler wiring, restrict
+  annotations).
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Server boots cleanly and all CSVs load. Let's start it in the background and
+  exercise some endpoints.
+
+  Searched for 2 patterns, read 1 file, listed 1 directory, ran 6 shell commands (ctrl+o to expand)
+
+● Background command "Start cds watch in background for endpoint testing"
+completed (exit code 0)
+
+● Found it — the leading slash in @(path: '/catalog') bypasses CAP's
+  protocol-path prefixing entirely (CAP only prepends /odata/v4 when the path
+  doesn't start with /). Fixing both service definitions.
+
+● Update(srv\catalog-service.cds)
+  ⎿  Added 1 line, removed 1 line
+      2  using { anubhav.claude as common } from '../db/common';
+      3  
+      4  @requires: 'authenticated-user'
+      5 -service CatalogService @(path: '/catalog') {                    
+      5 +service CatalogService @(path: 'catalog') {                     
+      6  
+      7    entity Travellers         as projection on db.Travellers;
+      8    entity TravelledLocations as projection on db.TravelledLocatio
+         ns;
+
+● Update(srv\user-management.cds)
+  ⎿  Added 1 line, removed 1 line
+      1  using { anubhav.claude as db } from '../db/schema';
+      2  
+      3 -service UserManagement @(path: '/user-management') {            
+      3 +service UserManagement @(path: 'user-management') {             
+      4  
+      5    entity Users     as projection on db.Users;
+      6    entity Roles     as projection on db.Roles;
+
+  Read 1 file, ran 4 shell commands (ctrl+o to expand)
+
+● Both spec-required paths now resolve correctly. Let's run a broader functional
+  smoke test: row filtering, fullName computation, ETag behavior, and V2
+  parity.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Found a real bug: @requires: ['authenticated-user', 'Admin'] let a Traveller
+  through to UserManagement (CAP treats array-valued @requires as OR, not AND).
+  Fixing that, then re-running tests with node instead of the unavailable
+  python3.
+
+● Update(srv\user-management.cds)
+  ⎿  Added 1 line, removed 1 line
+      15    action unassignRole(userId: String, roleId: String) returns B
+          oolean;
+      16  }
+      17  
+      18 -annotate UserManagement with @requires: ['authenticated-user', 
+         -'Admin'];                                                      
+      18 +annotate UserManagement with @requires: 'Admin';               
+
+  Searched for 3 patterns, read 1 file, ran 3 shell commands (ctrl+o to expand)
+
+● Update(db\schema.cds)
+  ⎿  Removed 1 line
+       9  using { cuid } from '@sap/cds/common';
+      10  using { anubhav.claude as common } from './common';
+      11  
+      12 -@insertonly                                                    
+      12  entity Destinations : cuid {
+      13    name        : String(200)  @mandatory @title: '{i18n>Destinat
+          ionName}';
+      14    country     : String(100)  @mandatory @title: '{i18n>Country}
+          ';
+● Update(srv\handlers\destinations.handler.js)
+  ⎿  Added 12 lines
+       8      const existing = await SELECT.one.from(Destinations).where(
+          { name });
+       9      if (existing) return req.error(409, 'Destination with this 
+          name already exists');
+      10    });
+      11 +                                                               
+      12 +  // Destinations are an immutable master list: Create+Read are
+         + open, but                                                     
+      13 +  // Update/Delete must be rejected. Neither @readonly (blocks 
+         +Create too)                                                    
+      14 +  // nor @insertonly (blocks Read too) matches this exact combi
+         +nation, so                                                     
+      15 +  // it's enforced explicitly here instead.                    
+      16 +  srv.before('UPDATE', Destinations, (req) => {                
+      17 +    req.reject(405, 'Destinations are immutable once created');
+      18 +  });                                                          
+      19 +                                                               
+      20 +  srv.before('DELETE', Destinations, (req) => {                
+      21 +    req.reject(405, 'Destinations are immutable once created');
+      22 +  });                                                          
+      23  };
+
+● Update(srv\catalog-service.cds)
+  ⎿  Added 2 lines, removed 2 lines
+      33  ];
+      34  
+      35  // Destinations: master list, immutable once created. Create+Re
+          ad open
+      36 -// to all authenticated users; Update/Delete are blocked at the
+         - db                                                            
+      37 -// layer via @insertonly (returns 405).                        
+      36 +// to all authenticated users; Update/Delete are blocked explic
+         +itly in                                                        
+      37 +// srv/handlers/destinations.handler.js (returns 405).         
+      38  annotate CatalogService.Destinations with @restrict: [
+      39    { grant: ['READ','CREATE'], to: 'authenticated-user' }
+      40  ];
+
+  Searched for 4 patterns, read 2 files, ran 5 shell commands (ctrl+o to expand)
+
+● @restrict runs before my custom handler and rejects with 403 first since
+  UPDATE/DELETE aren't in the grant list. I need to grant those ops at the
+  @restrict level and let the handler produce the 405 instead.
+
+● Update(srv\catalog-service.cds)
+  ⎿  Added 6 lines, removed 4 lines
+      32    { grant: '*', to: 'Admin' }
+      33  ];
+      34  
+      35 -// Destinations: master list, immutable once created. Create+Re
+         -ad open                                                        
+      36 -// to all authenticated users; Update/Delete are blocked explic
+         -itly in                                                        
+      37 -// srv/handlers/destinations.handler.js (returns 405).         
+      35 +// Destinations: master list, immutable once created. All CRUD 
+         +ops are                                                        
+      36 +// authorized here for any authenticated user; Update/Delete ar
+         +e then                                                         
+      37 +// rejected with 405 (not 403) explicitly in                   
+      38 +// srv/handlers/destinations.handler.js, since @restrict itself
+         + always                                                        
+      39 +// denies with 403, not 405, for operations outside the grant l
+         +ist.                                                           
+      40  annotate CatalogService.Destinations with @restrict: [
+      39 -  { grant: ['READ','CREATE'], to: 'authenticated-user' }       
+      41 +  { grant: '*', to: 'authenticated-user' }                     
+      42  ];
+      43  
+      44  // Value helps: read-only for all authenticated users.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● All Destinations behaviors now match spec exactly. Let's finish the remaining
+  checks: ETag flow, overlap/date validation, and OData V2 parity.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● All core acceptance behaviors verified live. Now let's exercise UserManagement
+  functions/actions end-to-end.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● createUser returns 200 instead of the spec's required 201 — CAP doesn't
+  auto-201 custom actions. Fixing the handler to set the status explicitly.
+
+● Update(srv\handlers\user-management.handler.js)
+  ⎿  Added 1 line
+      52      await INSERT.into(UserRoles).entries({ user_ID: userID, rol
+          e_ID: role.ID });
+      53      await audit('createUser', { userId: userID, roleId: role.ID
+           });
+      54  
+      55 +    if (req.http) req.http.res.status(201);                    
+      56      return SELECT.one.from(Users).where({ ID: userID });
+      57    });
+      58  
+
+  Searched for 2 patterns, read 2 files, ran 2 shell commands (ctrl+o to expand)
+
+● Update(srv\handlers\user-management.handler.js)
+  ⎿  Added 2 lines
+      52      await INSERT.into(UserRoles).entries({ user_ID: userID, rol
+          e_ID: role.ID });
+      53      await audit('createUser', { userId: userID, roleId: role.ID
+           });
+      54  
+      55 +    console.log('DEBUG createUser req.http present?', !!req.htt
+         +p, !!req.http?.res);                                           
+      56      if (req.http) req.http.res.status(201);
+      57 +    console.log('DEBUG statusCode now', req.http?.res?.statusCo
+         +de);                                                           
+      58      return SELECT.one.from(Users).where({ ID: userID });
+      59    });
+      60  
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● It works now — 201. The earlier 200 results were just stale-reload timing
+  (note the log also shows the server picked up the earlier path fix: at: 
+  ['/odata/v4/catalog']). Removing the debug logging.
+
+● Update(srv\handlers\user-management.handler.js)
+  ⎿  Removed 2 lines
+      52      await INSERT.into(UserRoles).entries({ user_ID: userID, rol
+          e_ID: role.ID });
+      53      await audit('createUser', { userId: userID, roleId: role.ID
+           });
+      54  
+      55 -    console.log('DEBUG createUser req.http present?', !!req.htt
+         -p, !!req.http?.res);                                           
+      55      if (req.http) req.http.res.status(201);
+      57 -    console.log('DEBUG statusCode now', req.http?.res?.statusCo
+         -de);                                                           
+      56      return SELECT.one.from(Users).where({ ID: userID });
+      57    });
+      58  
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● All $expand behaviors and validation edge cases confirmed working end to end.
+  Now let's stop the manual server and run the actual Jest suite.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● cds.test() in v9 needs a separate @cap-js/cds-test package. Installing it.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Two real gaps found by the tests: (1) fullName isn't computed when Travellers
+  is reached via $expand from TravelledLocations (the entity-level after READ
+  handler doesn't fire for nested expand results), and (2) DELETE on another
+  traveller's TravelledLocations returns 403 instead of the spec's 404 (an
+  @restrict where mismatch on a mutating op is a hard auth reject, not a query
+  filter). Fixing both.
+
+● Update(srv\catalog-service.cds)
+  ⎿  Added 7 lines, removed 2 lines
+      26  
+      27  // TravelledLocations: immutable travel log — Create/Read/Delet
+          e only,
+      28  // no Update. Traveller is row-filtered via the parent Travelle
+          rs
+      29 -// composition (traveller.userID = $user).                     
+      29 +// composition (traveller.userID = $user) for READ/CREATE. DELE
+         +TE is                                                          
+      30 +// granted broadly here and ownership is instead checked explic
+         +itly in                                                        
+      31 +// srv/handlers/travelled-locations.handler.js, because @restri
+         +ct's                                                           
+      32 +// where-clause rejects a mismatched DELETE with a hard 403 rat
+         +her than                                                       
+      33 +// the 404 (row simply not found) the spec requires for this ca
+         +se.                                                            
+      34  annotate CatalogService.TravelledLocations with @restrict: [
+      31 -  { grant: ['READ','CREATE','DELETE'], to: 'Traveller', where: 
+         -'traveller.userID = $user' },                                  
+      35 +  { grant: ['READ','CREATE'], to: 'Traveller', where: 'travelle
+         +r.userID = $user' },                                           
+      36 +  { grant: 'DELETE', to: 'Traveller' },                        
+      37    { grant: '*', to: 'Admin' }
+      38  ];
+      39  
+
+● Update(srv\handlers\travelled-locations.handler.js)
+  ⎿  Added 22 lines
+      34        return req.error(409, 'Traveller already has a trip durin
+          g this date range');
+      35      }
+      36    });
+      37 +                                                               
+      38 +  // DELETE is granted broadly at the @restrict level (see     
+      39 +  // srv/catalog-service.cds); ownership is enforced here inste
+         +ad so a                                                        
+      40 +  // non-owner's DELETE resolves to 404 (not found) rather than
+         + the 403                                                       
+      41 +  // that @restrict's where-clause would produce for a mutating
+         + event.                                                        
+      42 +  srv.before('DELETE', TravelledLocations, async (req) => {    
+      43 +    if (req.user.is('Admin')) return;                          
+      44 +                                                               
+      45 +    const id = req.data.ID;                                    
+      46 +    const owned = await SELECT.one.from(TravelledLocations)    
+      47 +      .where({ ID: id, traveller: { userID: req.user.id } });  
+      48 +    if (!owned) return req.error(404, 'TravelledLocations not f
+         +ound');                                                        
+      49 +  });                                                          
+      50 +                                                               
+      51 +  srv.after('READ', TravelledLocations, (data) => {            
+      52 +    const rows = Array.isArray(data) ? data : [data];          
+      53 +    for (const d of rows) {                                    
+      54 +      if (d?.traveller) {                                      
+      55 +        d.traveller.fullName = `${d.traveller.firstName || ''} 
+         +${d.traveller.lastName || ''}`.trim();                         
+      56 +      }                                                        
+      57 +    }                                                          
+      58 +  });                                                          
+      59  };
+
+● Update(srv\handlers\travelled-locations.handler.js)
+  ⎿  Added 1 line, removed 1 line
+      44  
+      45      const id = req.data.ID;
+      46      const owned = await SELECT.one.from(TravelledLocations)
+      47 -      .where({ ID: id, traveller: { userID: req.user.id } });  
+      47 +      .where({ ID: id, 'traveller.userID': req.user.id });     
+      48      if (!owned) return req.error(404, 'TravelledLocations not f
+          ound');
+      49    });
+      50  
+
+● Now re-running the full Jest suite.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● 30/31 passing now. Let's see the one remaining failure.
+
+  Read 1 file, ran 4 shell commands, searched memories (ctrl+o to expand)
+
+● Root cause found: my test fetched the ETag from a collection query
+  ($filter=...), which CAP doesn't return an ETag header for — only
+  single-entity-by-key GETs do. This is a test bug, not an app bug (matches what
+  I verified manually via curl earlier). Fixing the test.
+  Read 1 file (ctrl+o to expand)
+
+● Update(test\catalog-travellers.test.js)
+  ⎿  Added 6 lines, removed 2 lines
+      54    });
+      55  
+      56    it('accepts PATCH with the correct ETag and updates modifiedA
+          t', async () => {
+      57 -    const getRes = await GET(                                  
+      57 +    const listRes = await GET(                                 
+      58        "/odata/v4/catalog/Travellers?$filter=userID eq 'rajesh.k
+          umar'",
+      59        traveller
+      60      );
+      61 -    const id = getRes.data.value[0].ID;                        
+      61 +    const id = listRes.data.value[0].ID;                       
+      62 +                                                               
+      63 +    // ETag headers are only returned on a single-entity-by-key
+         + GET, not                                                      
+      64 +    // on a collection query.                                  
+      65 +    const getRes = await GET(`/odata/v4/catalog/Travellers(${id
+         +})`, traveller);                                               
+      66      const etag = getRes.headers.etag;
+      67  
+      68      const patchRes = await PATCH(
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● All 31 Jest tests pass. Now let's clean up the leftover temp files and do a
+  final cds lint check.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● cds lint isn't usable — ESLint itself was never installed in this repo
+  (pre-existing gap, unrelated to my changes, and not in the approved plan).
+  Skipping that; the CDS-level checks (compile, watch boot, functional smoke
+  tests, Jest) already cover correctness. Let's do one final clean boot check
+  and review the full diff.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Clean boot confirmed. Let's review the complete set of changes.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Implementation is complete and fully verified. Summary:
+
+  Built:
+  - db/common.cds / db/schema.cds rewritten to match the spec: TravellerTypes,
+    Destinations (now the immutable master list), Travellers,
+    TravelledLocations, Users, Roles, UserRoles. Vacations/Contacts/AppUsers
+    removed.
+  - srv/catalog-service.cds + srv/user-management.cds with @restrict/@requires
+    per spec §5, plus
+    lockUser/unlockUser/createUser/resetPassword/assignRole/unassignRole.
+  - Generic handlers in srv/handlers/ for validation, ownership enforcement,
+    fullName computation, overlap detection, and UserManagement business logic.
+  - Regenerated all db/data/*.csv seed data, new i18n keys across all 4 locales
+    (parity-checked), package.json (mock auth, jest, audit-logging), and
+    server.js mounting the OData V2 adapter.
+  - 31 Jest tests (test/*.test.js) covering spec §8 acceptance criteria, plus
+    test/test.http for manual $expand checks.
+
+  Bugs found and fixed during verification (via live cds watch + Jest, not just
+  static review):
+  1. @(path: '/catalog') (leading slash) bypasses CAP's /odata/v4 prefixing
+     entirely — changed to @(path: 'catalog').
+  2. @requires: [...] array is OR, not AND — reverted UserManagement to a single
+     @requires: 'Admin'.
+  3. @insertonly blocks READ too (not just UPDATE/DELETE) — removed it from
+     Destinations; the Create+Read/Update+Delete split is now enforced by
+     granting all ops in @restrict and rejecting UPDATE/DELETE explicitly in the
+     handler (405).
+  4. @restrict's where clause gives a hard 403 on a mismatched DELETE, not the
+     spec's 404 — TravelledLocations DELETE is now granted broadly and
+     ownership/404 is checked explicitly in the handler.
+  5. fullName wasn't computed on $expand=traveller(...) from TravelledLocations
+     (entity-level after READ doesn't fire for nested expand) — added explicit
+     enrichment there.
+  6. Custom actions default to HTTP 200 in CAP — createUser now explicitly
+     sets 201.
+  7. cds add odata-v2-proxy doesn't exist in @sap/cds v9 — used
+     @cap-js-community/odata-v2-adapter (the maintained successor) mounted via
+     server.js instead.
+
+  All 31 Jest tests pass, cds watch boots cleanly, and I manually verified
+  row-level filtering, ETag 428/412/200, overlap/date validation, $expand, and
+  V2 parity live against the running server. cds lint couldn't run since ESLint
+  itself was never installed in this repo (pre-existing gap, unrelated to this
+  work).
+
+✻ Cooked for 22m 5s · done 11:23 PM
