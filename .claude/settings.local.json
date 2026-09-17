@@ -1,7 +1,19 @@
 {
   "permissions": {
     "allow": [
-      "WebFetch"
+      "WebFetch",
+      "PowerShell(New-Item *)",
+      "Bash(git add *)",
+      "Bash(git pull *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(npx cds *)",
+      "Bash(npm install *)",
+      "Bash(node *)",
+      "Bash(powershell *)",
+      "PowerShell(Get-ChildItem )",
+      "PowerShell(Get-ChildItem \"C:\\\\claude\\\\anubhav-claude\" -Force | Where-Object { $_.Name -ne \"node_modules\" } | Select-Object Name, Attributes)",
+      "PowerShell(Get-ChildItem . -Force | Where-Object { $_.Name -ne \"node_modules\" } | Select-Object Name, Attributes)"
     ]
   }
 }
