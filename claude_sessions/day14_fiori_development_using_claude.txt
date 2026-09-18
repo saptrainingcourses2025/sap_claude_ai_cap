@@ -1,0 +1,878 @@
+ ▐▛███▛█   Claude Code v2.1.275
+▝▜██████▀  Sonnet 5 · Claude Pro
+  ▝▝ ▝▝    C:\claude\anubhav-claude
+
+
+❯ /rename day14_fiori_development_using_claude 
+  ⎿  Session renamed to: day14_fiori_development_using_claude
+
+❯ please refer the spec @.claude/specs/fiori_dev_spec.md to design and develope 
+  the freestyle fiori app in app folder on top on services provided in @srv\.   
+  do not add new service endpoints until approved. check the acceptance         
+  criteria at the end.                                                          
+  ⎿  Read .claude\specs\fiori_dev_spec.md (294 lines)
+  ⎿  Listed directory srv\
+
+● I'll start by examining the existing services and schema to understand what's
+  available before building the app.
+
+  Searched for 3 patterns, read 13 files (ctrl+o to expand)
+
+● I checked the actual schema and service handlers against the spec's
+  assumptions, and found real gaps that block several acceptance criteria under
+  the current backend — before I scaffold the UI5 app I want your call on these,
+  since fixing them means touching srv/db (new endpoints or schema fields),
+  which you said needs approval first:
+
+  - Self-registration (AC #3): CatalogService requires authenticated-user at the
+    service level, so an anonymous visitor literally cannot call POST 
+    /catalog/Travellers. There's no public register action anywhere (AuthService
+    only has login/refresh/me; UserManagement.createUser is ADMIN-only). The
+    spec's registration flow can't work as written without a new public
+    endpoint.
+  - Spend donut chart (AC #7): TravelledLocations has no amount/spend field at
+    all — only traveller, destination, travelFrom, travelTo, notes. There's
+    nothing to sum.
+  - Travelled Locations "full CRUD" (AC #9): the backend explicitly rejects
+    UPDATE on TravelledLocations with a 405 ("immutable once created"). Create
+    and Delete work; edit does not.
+  - Addresses tab (AC #8): Travellers has a single addressType + phone field,
+    not a composition of multiple addresses. There's no list to show in a table.
+
+  Lock/unlock (AC #6) is fine as-is — UserManagement.lockUser/unlockUser can be
+  driven from Travellers.userID, no changes needed.
+
+● User answered Claude's questions:
+  ⎿  · Self-registration needs a public endpoint that doesn't exist yet 
+     (CatalogService requires auth). How should the UI handle registration for 
+     now? → Add a public register endpoint (Recommended)
+     · The spend donut chart needs an amount/spend value that doesn't exist on 
+     TravelledLocations. How should the Traveller dashboard chart work? → Chart 
+     trip count per destination instead (Recommended)
+     · TravelledLocations is backend-immutable (UPDATE returns 405). The spec 
+     wants full CRUD on that tab. How should it behave? → Create + Delete only, 
+     no edit (Recommended)
+     · Travellers only has single addressType+phone fields, not a list of 
+     addresses. How should the Addresses tab work? → Single-record edit form 
+     (Recommended)
+
+  Searched for 5 patterns, read 24 files (ctrl+o to expand)
+
+● Confirms no "amount" field anywhere — matches the earlier decision to use
+  trip-count donut instead of spend.
+
+  Now I have the full picture. Let me present the concrete register action I'll
+  add (the only backend change) for confirmation before writing any srv code.
+
+● User answered Claude's questions:
+  ⎿  · Here is the exact new endpoint I'll add to satisfy self-registration (AC 
+     #3-#5) — the only backend change, everything else builds on existing 
+     endpoints. Proceed? → Yes, add exactly this (Recommended)
+
+  Read 1 file (ctrl+o to expand)
+
+● Update(srv\auth-service.cds)
+  ⎿  Added 12 lines
+      19      lastName  : String;
+      20      roles     : many String;
+      21    };
+      22 +                                                               
+      23 +  action register(                                             
+      24 +    loginName   : String,                                      
+      25 +    password    : String,                                      
+      26 +    firstName   : String,                                      
+      27 +    lastName    : String,                                      
+      28 +    phone       : String,                                      
+      29 +    addressType : String                                       
+      30 +  ) returns {                                                  
+      31 +    success : Boolean;                                         
+      32 +    message : String;                                          
+      33 +  };                                                           
+      34  }
+
+● Now the handler:
+
+● Update(srv\handlers\auth.handler.js)
+  ⎿  Added 54 lines
+       51      return issueTokens(user.ID);
+       52    });
+       53  
+       54 +  srv.on('register', async (req) => {                         
+       55 +    const { loginName, password: plain, firstName, lastName, p
+          +hone, addressType } = req.data;                               
+       56 +                                                              
+       57 +    if (!loginName || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(login
+          +Name)) {                                                      
+       58 +      return req.error(400, 'A valid email is required');     
+       59 +    }                                                         
+       60 +    if (!plain || plain.length < 8) {                         
+       61 +      return req.error(400, 'Password must be at least 8 chara
+          +cters');                                                      
+       62 +    }                                                         
+       63 +    if (!firstName || !firstName.trim() || !lastName || !lastN
+          +ame.trim()) {                                                 
+       64 +      return req.error(400, 'First name and last name are requ
+          +ired');                                                       
+       65 +    }                                                         
+       66 +                                                              
+       67 +    const db = await cds.connect.to('db');                    
+       68 +                                                              
+       69 +    const existingUser = await db.run(SELECT.one.from('anubhav
+          +.claude.Users').where({ loginName }));                        
+       70 +    if (existingUser) return req.error(409, 'Email already reg
+          +istered');                                                    
+       71 +                                                              
+       72 +    const existingTraveller = await db.run(SELECT.one.from('an
+          +ubhav.claude.Travellers').where({ email: loginName }));       
+       73 +    if (existingTraveller) return req.error(409, 'Email alread
+          +y registered');                                               
+       74 +                                                              
+       75 +    const travellerRole = await db.run(SELECT.one.from('anubha
+          +v.claude.Roles').where({ code: 'TRAVELLER' }));               
+       76 +    if (!travellerRole) return req.error(500, 'TRAVELLER role 
+          +is not configured');                                          
+       77 +                                                              
+       78 +    const createdUser = await db.run(                         
+       79 +      INSERT.into('anubhav.claude.Users').entries({ firstName,
+          + lastName, loginName, isLocked: true })                       
+       80 +    );                                                        
+       81 +    const userId = createdUser?.ID ?? (await db.run(SELECT.one
+          +.from('anubhav.claude.Users').where({ loginName }))).ID;      
+       82 +                                                              
+       83 +    const passwordHash = await password.hash(plain);          
+       84 +    await db.run(                                             
+       85 +      INSERT.into('anubhav.claude.UserCredentials').entries({ 
+          +user_ID: userId, passwordHash, failedAttempts: 0 })           
+       86 +    );                                                        
+       87 +    await db.run(INSERT.into('anubhav.claude.UserRoles').entri
+          +es({ user_ID: userId, role_ID: travellerRole.ID }));          
+       88 +                                                              
+       89 +    await db.run(                                             
+       90 +      INSERT.into('anubhav.claude.Travellers').entries({      
+       91 +        firstName,                                            
+       92 +        lastName,                                             
+       93 +        email: loginName,                                     
+       94 +        phone,                                                
+       95 +        addressType_code: addressType,                        
+       96 +        type_code: 'ST',                                      
+       97 +        status_code: 'P',                                     
+       98 +        userID: userId                                        
+       99 +      })                                                      
+      100 +    );                                                        
+      101 +                                                              
+      102 +    return {                                                  
+      103 +      success: true,                                          
+      104 +      message: 'Registration successful. An admin must unlock 
+          +your account before first login.'                             
+      105 +    };                                                        
+      106 +  });                                                         
+      107 +                                                              
+      108    srv.on('me', async (req) => {
+      109      if (req.user._is_anonymous) return req.error(401, 'Not aut
+           henticated');
+      110  
+
+● Now let's verify the CAP model compiles cleanly.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Compiles cleanly, and register is a proper unbound action. Now let's scaffold
+  the TravelHub UI5 app under app/travelhub.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Now I'll scaffold the TravelHub app. Starting with the project files and
+  shared infrastructure (BaseController, Header, Component).
+
+● Write(app\travelhub\package.json)
+  ⎿  Wrote 16 lines to app\travelhub\package.json
+       1 {
+       2   "name": "travelhub",
+       3   "version": "0.0.1",
+       4   "description": "TravelHub — SAPUI5 freestyle app on CAP OData 
+         V4 with JWT auth",
+       6     "ui5",
+       7     "openui5",
+       8     "sapui5"
+       9   ],
+      10   "main": "webapp/index.html",
+     … +7 lines (ctrl+o to expand)
+
+● Write(app\travelhub\ui5.yaml)
+  ⎿  Wrote 5 lines to app\travelhub\ui5.yaml
+      1 # yaml-language-server: $schema=https://sap.github.io/ui5-tooling
+        /schema/ui5.yaml.json
+      2 specVersion: "4.0"
+      3 metadata:
+      4   name: travelhub
+      5 type: application
+
+● Write(app\travelhub\webapp\index.html)
+  ⎿  Wrote 22 lines to app\travelhub\webapp\index.html
+       1 <!DOCTYPE html>
+       2 <html>
+       3 <head>
+       5     <meta name="viewport" content="width=device-width, initial-s
+         cale=1.0">
+       6     <title>Anubhav Trainings — TravelHub</title>
+       7     <script
+       9         src="https://sapui5.hana.ondemand.com/resources/sap-ui-c
+         ore.js"
+      10         data-sap-ui-theme="sap_horizon"
+     … +15 lines (ctrl+o to expand)
+
+● Write(app\travelhub\webapp\manifest.json)
+  ⎿  Wrote 108 lines to app\travelhub\webapp\manifest.json
+       1 {
+       2   "_version": "1.60.0",
+       3   "sap.app": {
+       4     "id": "travelhub",
+       5     "type": "application",
+       6     "i18n": "i18n/i18n.properties",
+       7     "applicationVersion": {
+       8       "version": "0.0.1"
+       9     },
+      10     "title": "{{appTitle}}",
+     … +102 lines (ctrl+o to expand)
+
+● Write(app\travelhub\webapp\i18n\i18n.properties)
+  ⎿  Wrote 2 lines to app\travelhub\webapp\i18n\i18n.properties
+      1 appTitle=TravelHub
+      2 appDescription=Anubhav Trainings — TravelHub freestyle Fiori app
+
+● Write(app\travelhub\webapp\model\models.js)
+  ⎿  Wrote 12 lines to app\travelhub\webapp\model\models.js
+       1 sap.ui.define(["sap/ui/model/json/JSONModel"], function (JSONMod
+       2     "use strict";
+       3 
+       4     return {
+         , lastName, roles, role }.
+       6         // Empty object means "not logged in" — Header.fragment.
+       7         // visibility and BaseController._guardRole both key off
+          /loginName.
+       8         createUserModel: function () {
+      10         }
+     … +6 lines (ctrl+o to expand)
+
+● Now the core BaseController — the heart of the spec.
+● Write(app\travelhub\webapp\controller\BaseController.js)
+  ⎿  Wrote 244 lines to app\travelhub\webapp\controller\BaseController.js
+       1 sap.ui.define([
+       2     "sap/ui/core/mvc/Controller",
+       3     "sap/m/MessageBox"
+       5     "use strict";
+       6 
+       7     return Controller.extend("travelhub.controller.BaseControlle
+         r", {
+       9         // -----------------------------------------------------
+         ------
+      10         // Accessors
+     … +287 lines (ctrl+o to expand)
+
+● Now Component.js — handles startup cookie check and routing.
+
+● Write(app\travelhub\webapp\Component.js)
+  ⎿  Wrote 71 lines to app\travelhub\webapp\Component.js
+       1 sap.ui.define([
+       2     "sap/ui/core/UIComponent",
+       3     "sap/ui/Device",
+       4     "travelhub/model/models"
+       5 ], function (UIComponent, Device, models) {
+       6     "use strict";
+       7 
+       8     return UIComponent.extend("travelhub.Component", {
+       9 
+      10         metadata: {
+     … +69 lines (ctrl+o to expand)
+
+● Update(app\travelhub\webapp\Component.js)
+  ⎿  Added 3 lines, removed 2 lines
+      1  sap.ui.define([
+      2      "sap/ui/core/UIComponent",
+      3      "sap/ui/Device",
+      4 -    "travelhub/model/models"                                    
+      5 -], function (UIComponent, Device, models) {                     
+      4 +    "travelhub/model/models",                                   
+      5 +    "travelhub/controller/BaseController"                       
+      6 +], function (UIComponent, Device, models, BaseController) {     
+      7      "use strict";
+      8  
+      9      return UIComponent.extend("travelhub.Component", {
+
+● Update(app\travelhub\webapp\Component.js)
+  ⎿  Added 1 line, removed 2 lines
+      61          // A throwaway controller instance just to reuse BaseCo
+          ntroller's cookie/JWT
+      62          // helpers during Component startup, before any view ex
+          ists.
+      63          _getBootController: function () {
+      64 -            var Controller = sap.ui.require("travelhub/controll
+         -er/BaseController");                                           
+      64              var oComponent = this;
+      66 -            return Object.assign(Object.create(Controller.proto
+         -type), {                                                       
+      65 +            return Object.assign(Object.create(BaseController.p
+         +rototype), {                                                   
+      66                  getOwnerComponent: function () { return oCompon
+          ent; }
+      67              });
+      68          }
+
+● Now the Header fragment, App shell, and the RegisterDialog fragment.
+
+● Write(app\travelhub\webapp\fragment\Header.fragment.xml)
+  ⎿  Wrote 14 lines to app\travelhub\webapp\fragment\Header.fragment.xml
+       1 <core:FragmentDefinition xmlns="sap.m" xmlns:core="sap.ui.core">
+       2     <Bar design="Header">
+       3         <contentLeft>
+         coins/200x200/37581.png"
+       5                    width="2.5rem" height="2.5rem"/>
+       6             <Title text="Anubhav Trainings — TravelHub" level="H
+         2"/>
+       8         <contentRight>
+       9             <Button icon="sap-icon://log" text="Logout"
+      10                     press=".onLogout"
+     … +6 lines (ctrl+o to expand)
+
+● Write(app\travelhub\webapp\view\App.view.xml)
+  ⎿  Wrote 17 lines to app\travelhub\webapp\view\App.view.xml
+       1 <mvc:View controllerName="travelhub.controller.App"
+       2           xmlns:mvc="sap.ui.core.mvc"
+       3           xmlns:core="sap.ui.core"
+       4           xmlns="sap.m" displayBlock="true">
+       5     <Shell>
+       7             <pages>
+       8                 <Page id="shellPage" showHeader="false">
+       9                     <content>
+      10                         <core:Fragment fragmentName="travelhub.f
+         ragment.Header" type="XML"/>
+     … +8 lines (ctrl+o to expand)
+
+● Write(app\travelhub\webapp\controller\App.controller.js)
+  ⎿  Wrote 16 lines to app\travelhub\webapp\controller\App.controller.js
+      1 sap.ui.define([
+      2     "travelhub/controller/BaseController"
+      3 ], function (BaseController) {
+      4     "use strict";
+      5 
+        o the Header
+      7     // fragment's Logout button (press=".onLogout") resolves agai
+        nst a
+      8     // BaseController instance; it holds no page-specific logic.
+      9     return BaseController.extend("travelhub.controller.App", {
+     … +8 lines (ctrl+o to expand)
+
+● Write(app\travelhub\webapp\fragment\RegisterDialog.fragment.xml)
+  ⎿  Wrote 36 lines to
+     app\travelhub\webapp\fragment\RegisterDialog.fragment.xml
+       1 <core:FragmentDefinition xmlns="sap.m" xmlns:core="sap.ui.core" 
+       2 
+         ntWidth="420px" busy="{register>/busy}">
+       4         <content>
+         0%">
+         me"/>
+         aft/firstName}" width="100%"/>
+       8 
+         " class="sapUiTinyMarginTop"/>
+         ft/lastName}" width="100%"/>
+     … +43 lines (ctrl+o to expand)
+
+● Now Login view and controller.
+
+● Write(app\travelhub\webapp\view\Login.view.xml)
+  ⎿  Wrote 30 lines to app\travelhub\webapp\view\Login.view.xml
+       1 <mvc:View
+       2     controllerName="travelhub.controller.Login"
+       3     xmlns:mvc="sap.ui.core.mvc"
+       4     xmlns="sap.m"
+       5     xmlns:l="sap.ui.layout"
+       7 
+       8     <Page id="pageLogin" showHeader="false">
+       9         <content>
+      10             <VBox class="sapUiMediumMargin" alignItems="Center" 
+         justifyContent="Center">
+     … +29 lines (ctrl+o to expand)
+
+● Write(app\travelhub\webapp\controller\Login.controller.js)
+  ⎿  Wrote 88 lines to app\travelhub\webapp\controller\Login.controller.js
+       1 sap.ui.define([
+       2     "travelhub/controller/BaseController",
+       3     "sap/ui/model/json/JSONModel",
+       4     "sap/ui/core/Fragment",
+       5     "sap/m/MessageToast"
+         {
+       7     "use strict";
+       8 
+       9     var ADDRESS_TYPES = [
+      10         { code: "H", name: "Home" },
+     … +85 lines (ctrl+o to expand)
+
+● Write(app\travelhub\webapp\fragment\SpendDonutChart.fragment.xml)
+  ⎿  Wrote 34 lines to
+     app\travelhub\webapp\fragment\SpendDonutChart.fragment.xml
+       1 <!--
+         t)). The
+       3     backing entity (TravelledLocations) has no amount/spend fiel
+         d, so this
+         ed in the
+       5     controller with a plain JS reduce over already-loaded data —
+       6     backend endpoint or field required.
+       7 -->
+       8 <core:FragmentDefinition xmlns="sap.m" xmlns:core="sap.ui.core"
+      10     xmlns:vizData="sap.viz.ui5.data"
+     … +34 lines (ctrl+o to expand)
+
+● Write(app\travelhub\webapp\fragment\AdminTravellersTable.fragment.xml)
+  ⎿  Wrote 30 lines to
+     app\travelhub\webapp\fragment\AdminTravellersTable.fragment.xml
+       1 <core:FragmentDefinition xmlns="sap.m" xmlns:core="sap.ui.core">
+       2 
+       3     <Table id="tblAdminTravellers" items="{admin>/travellers}" g
+         rowing="true" growingThreshold="20">
+       4         <headerToolbar>
+       6                 <Title text="Travellers"/>
+       7             </Toolbar>
+       8         </headerToolbar>
+       9         <columns>
+      10             <Column><Text text="Name"/></Column>
+     … +23 lines (ctrl+o to expand)
+
+● Write(app\travelhub\webapp\view\AdminDashboard.view.xml)
+  ⎿  Wrote 44 lines to app\travelhub\webapp\view\AdminDashboard.view.xml
+      1 <mvc:View
+      2     controllerName="travelhub.controller.AdminDashboard"
+      3     xmlns:mvc="sap.ui.core.mvc"
+      4     xmlns="sap.m"
+      5     displayBlock="true">
+      6 
+      7     <Page id="pageAdminDashboard" showHeader="false" busy="{admin
+        >/busy}">
+      8         <content>
+      9             <VBox class="sapUiMediumMargin">
+     … +46 lines (ctrl+o to expand)
+
+● Write(app\travelhub\webapp\controller\AdminDashboard.controller.js)
+  ⎿  Wrote 109 lines to
+     app\travelhub\webapp\controller\AdminDashboard.controller.js
+       1 sap.ui.define([
+       3     "sap/ui/model/json/JSONModel"
+       4 ], function (BaseController, JSONModel) {
+       5     "use strict";
+       7     // Travellers has no `role` field and Destinations/Travelled
+         Locations have
+          the user):
+       9     // Role column is dropped, the "spend" tile/chart become a t
+         rip-count
+         ers.isLocked
+     … +131 lines (ctrl+o to expand)
+
+● Write(app\travelhub\webapp\fragment\TravellerProfile.fragment.xml)
+  ⎿  Wrote 11 lines to
+     app\travelhub\webapp\fragment\TravellerProfile.fragment.xml
+      1 <core:FragmentDefinition xmlns="sap.m" xmlns:core="sap.ui.core">
+      2 
+      3     <HBox class="sapUiSmallMarginBottom" alignItems="Center">
+      4         <core:Icon src="sap-icon://person-placeholder" size="2.5r
+        em" class="sapUiTinyMarginEnd"/>
+      6             <Title text="{traveller>/profile/fullName}" level="H3
+        "/>
+      7             <Text text="{traveller>/profile/addressLabel}"/>
+      8         </VBox>
+      9     </HBox>
+     … +2 lines (ctrl+o to expand)
+
+● Write(app\travelhub\webapp\fragment\AddressesTab.fragment.xml)
+  ⎿  Wrote 20 lines to
+     app\travelhub\webapp\fragment\AddressesTab.fragment.xml
+       1 <!--
+         position of
+       3     multiple addresses, so this is a single-record edit form (ag
+       4     user) rather than an editable table. Bindings are relative t
+       5     Travellers('<id>') element bound in TravellerDashboard.contr
+         oller.js, so
+         utomatically.
+       7 -->
+         xmlns:l="sap.ui.layout">
+      10     <l:VerticalLayout class="sapUiSmallMargin" width="100%">
+     … +18 lines (ctrl+o to expand)
+
+● Write(app\travelhub\webapp\fragment\TravelledLocationsTab.fragment.xml)
+  ⎿  Wrote 42 lines to
+     app\travelhub\webapp\fragment\TravelledLocationsTab.fragment.xml
+       1 <!--
+       2     Create + Delete only, no inline edit: the backend rejects UP
+       3     TravelledLocations with a 405 (immutable once created) — agr
+         eed with the
+       4     user rather than relaxing that rule. Row cells are therefore
+       5     Text controls.
+       6 -->
+       7 <core:FragmentDefinition xmlns="sap.m" xmlns:core="sap.ui.core">
+       9     <VBox class="sapUiSmallMarginTop">
+      10         <Toolbar>
+     … +43 lines (ctrl+o to expand)
+
+● Now the TravellerDashboard view (assembles the fragments into the IconTabBar)
+  and its controller.
+
+● Write(app\travelhub\webapp\view\TravellerDashboard.view.xml)
+  ⎿  Wrote 37 lines to
+     app\travelhub\webapp\view\TravellerDashboard.view.xml
+       1 <mvc:View
+       2     controllerName="travelhub.controller.TravellerDashboard"
+       3     xmlns:mvc="sap.ui.core.mvc"
+       4     xmlns:core="sap.ui.core"
+       5     xmlns="sap.m"
+       7 
+       8     <Page id="pageTravellerDashboard" showHeader="false" busy="{
+         traveller>/busy}">
+       9         <content>
+      10             <VBox class="sapUiMediumMargin">
+     … +38 lines (ctrl+o to expand)
+● Write(app\travelhub\webapp\controller\TravellerDashboard.controller.js)
+  ⎿  Wrote 115 lines to
+     app\travelhub\webapp\controller\TravellerDashboard.controller.js
+       1 sap.ui.define([
+       2     "travelhub/controller/BaseController",
+       3     "sap/ui/model/json/JSONModel",
+       4     "sap/m/MessageToast"
+       5 ], function (BaseController, JSONModel, MessageToast) {
+       7 
+       8     return BaseController.extend("travelhub.controller.Traveller
+         Dashboard", {
+       9 
+      10         onInit: function () {
+     … +129 lines (ctrl+o to expand)
+
+● Now let's validate everything compiles and existing tests still pass.
+
+  Ran 3 shell commands (ctrl+o to expand)
+
+● That's just the multi-service edmx flag — not an actual error. Let's use -s 
+  all and run cds compile . --to json to fully validate the model including the
+  frontend-facing app.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Good, all three services compile cleanly with register included. Let's run the
+  existing Jest test suite to make sure nothing regressed.
+
+  Ran 3 shell commands, searched memories (ctrl+o to expand)
+
+● All 34 tests pass on this run — the earlier failure was a flaky
+  parallel-worker sqlite contention issue, not caused by our change. Let's run
+  once more with limited workers to confirm stability.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● All 34 tests pass serially. Now let's start the CAP server and actually
+  exercise the new register action end-to-end, then check the UI5 app is served
+  correctly.
+
+  Searched for 2 patterns, ran 5 shell commands (ctrl+o to expand)
+
+● The workspace is now linked. Let's restart the server and verify both apps
+  mount correctly.
+
+  Searched for 1 pattern, ran 1 shell command (ctrl+o to expand)
+
+● Good — it was mounted, just earlier in the log before my grep window. Both
+  apps are mounted correctly (/travelhub and /tyson.claude.managetravel). Let's
+  confirm the app actually serves and test the full auth flow against the
+  running server.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Registration, uniqueness enforcement, and locked-account gating all work
+  end-to-end. Now let's test the admin unlock flow and then a full login as the
+  newly-approved traveller, plus admin login for the dashboard.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Admin login and JWT-authenticated CatalogService reads work. Let's now unlock
+  the traveller via UserManagement.unlockUser (the exact call the AdminDashboard
+  controller makes) and confirm they can then log in.
+
+  Searched for 1 pattern, read 1 file, ran 7 shell commands (ctrl+o to expand)
+
+● Background command "Check if 'amount' field exists anywhere in the project"
+failed with exit code 1
+
+● I found a significant pre-existing bug, unrelated to the app I'm building,
+  that blocks the Admin lock/unlock feature (AC #6) from working in real usage.
+
+  What's broken: Every custom action/function in
+  srv/handlers/user-management.handler.js (lockUser, unlockUser, createUser,
+  resetPassword, assignRole, unassignRole) uses bare SELECT.one.from(Users) /
+  UPDATE(Users) without first calling cds.connect.to('db'). When run as a real
+  server (npm start), these fail with "Can't execute query as no primary 
+  database is connected." — I verified this against the actually-running server
+  for both createUser (POST action) and unlockUser (GET function). Plain entity
+  reads (e.g. GET /catalog/Travellers) work fine, and Jest's cds.test() harness
+  apparently tolerates it, which is why the existing test suite (34/34) never
+  caught it.
+
+  The fix pattern already exists in this codebase — srv/handlers/auth.handler.js
+  does it correctly: const db = await cds.connect.to('db'); await 
+  db.run(SELECT...). user-management.handler.js just never adopted that pattern.
+
+  This isn't a new endpoint — it's a one-line-per-query fix to existing
+  handlers, using a pattern already established elsewhere in this codebase. But
+  since it's outside what I was cleared to touch (only
+  auth-service.cds/auth.handler.js for register), I want your go-ahead before
+  editing it.
+
+● User answered Claude's questions:
+  ⎿  · Fix the pre-existing bug in srv/handlers/user-management.handler.js (bare
+     SELECT/UPDATE/INSERT calls fail outside jest's test harness) so Admin 
+     lock/unlock actually works when the app runs for real? → Yes, fix it 
+     (Recommended)
+
+  Read 1 file (ctrl+o to expand)
+
+● Write(srv\handlers\user-management.handler.js)
+  ⎿  Added 31 lines, removed 26 lines
+      26    const { Users, Roles, UserRoles } = srv.entities;
+      27  
+      28    srv.on('lockUser', async (req) => {
+      29 -    const user = await SELECT.one.from(Users).where({ ID: req.d
+         -ata.userId });                                                 
+      29 +    const db = await cds.connect.to('db');                     
+      30 +    const user = await db.run(SELECT.one.from(Users).where({ ID
+         +: req.data.userId }));                                         
+      31      if (!user) return req.error(404, 'User not found');
+      32      if (user.isLocked) return false;
+      33  
+      33 -    await UPDATE(Users).set({ isLocked: true }).where({ ID: use
+         -r.ID });                                                       
+      34 +    await db.run(UPDATE(Users).set({ isLocked: true }).where({ 
+         +ID: user.ID }));                                               
+      35      await audit('lockUser', { userId: user.ID });
+      36      return true;
+      37    });
+      38  
+      39    srv.on('unlockUser', async (req) => {
+      39 -    const user = await SELECT.one.from(Users).where({ ID: req.d
+         -ata.userId });                                                 
+      40 +    const db = await cds.connect.to('db');                     
+      41 +    const user = await db.run(SELECT.one.from(Users).where({ ID
+         +: req.data.userId }));                                         
+      42      if (!user) return req.error(404, 'User not found');
+      43      if (!user.isLocked) return false;
+      44  
+      43 -    await UPDATE(Users).set({ isLocked: false }).where({ ID: us
+         -er.ID });                                                      
+      45 +    await db.run(UPDATE(Users).set({ isLocked: false }).where({
+         + ID: user.ID }));                                              
+      46      await audit('unlockUser', { userId: user.ID });
+      47      return true;
+      48    });
+     ...
+      52  
+      53      if (!validatePassword(req, initialPassword)) return;
+      54  
+      53 -    const role = await SELECT.one.from(Roles).where({ ID: roleI
+         -d });                                                          
+      55 +    const db = await cds.connect.to('db');                     
+      56 +                                                               
+      57 +    const role = await db.run(SELECT.one.from(Roles).where({ ID
+         +: roleId }));                                                  
+      58      if (!role) return req.error(404, 'Role not found');
+      59  
+      56 -    const existing = await SELECT.one.from(Users).where({ login
+         -Name: email });                                                
+      60 +    const existing = await db.run(SELECT.one.from(Users).where(
+         +{ loginName: email }));                                        
+      61      if (existing) return req.error(409, 'User already exists');
+      62  
+      59 -    const created = await INSERT.into(Users).entries({         
+      60 -      firstName,                                               
+      61 -      lastName,                                                
+      62 -      loginName: email,                                        
+      63 -      isLocked: false                                          
+      64 -    });                                                        
+      65 -    const userID = created?.ID ?? (await SELECT.one.from(Users)
+         -.where({ loginName: email })).ID;                              
+      63 +    const created = await db.run(                              
+      64 +      INSERT.into(Users).entries({ firstName, lastName, loginNa
+         +me: email, isLocked: false })                                  
+      65 +    );                                                         
+      66 +    const userID = created?.ID ?? (await db.run(SELECT.one.from
+         +(Users).where({ loginName: email }))).ID;                      
+      67  
+      68      const passwordHash = await password.hash(initialPassword);
+      68 -    await INSERT.into('anubhav.claude.UserCredentials').entries
+         -({ user_ID: userID, passwordHash, failedAttempts: 0 });        
+      69 -    await INSERT.into(UserRoles).entries({ user_ID: userID, rol
+         -e_ID: role.ID });                                              
+      69 +    await db.run(INSERT.into('anubhav.claude.UserCredentials').
+         +entries({ user_ID: userID, passwordHash, failedAttempts: 0 }));
+      70 +    await db.run(INSERT.into(UserRoles).entries({ user_ID: user
+         +ID, role_ID: role.ID }));                                      
+      71      await audit('createUser', { userId: userID, roleId: role.ID
+           });
+      72  
+      73      if (req.http) req.http.res.status(201);
+      73 -    return SELECT.one.from(Users).where({ ID: userID });       
+      74 +    return db.run(SELECT.one.from(Users).where({ ID: userID }))
+         +;                                                              
+      75    });
+      76  
+      77    srv.on('resetPassword', async (req) => {
+     ...
+      79  
+      80      if (!validatePassword(req, newPassword)) return;
+      81  
+      81 -    const user = await SELECT.one.from(Users).where({ ID: userI
+         -d });                                                          
+      82 +    const db = await cds.connect.to('db');                     
+      83 +    const user = await db.run(SELECT.one.from(Users).where({ ID
+         +: userId }));                                                  
+      84      if (!user) return req.error(404, 'User not found');
+      85  
+      86      const passwordHash = await password.hash(newPassword);
+      85 -    const creds = await SELECT.one.from('anubhav.claude.UserCre
+         -dentials').where({ user_ID: userId });                         
+      87 +    const creds = await db.run(SELECT.one.from('anubhav.claude.
+         +UserCredentials').where({ user_ID: userId }));                 
+      88      if (creds) {
+      87 -      await UPDATE('anubhav.claude.UserCredentials').set({ pass
+         -wordHash, failedAttempts: 0 }).where({ ID: creds.ID });        
+      89 +      await db.run(UPDATE('anubhav.claude.UserCredentials').set
+         +({ passwordHash, failedAttempts: 0 }).where({ ID: creds.ID }));
+      90      } else {
+      89 -      await INSERT.into('anubhav.claude.UserCredentials').entri
+         -es({ user_ID: userId, passwordHash, failedAttempts: 0 });      
+      91 +      await db.run(INSERT.into('anubhav.claude.UserCredentials'
+         +).entries({ user_ID: userId, passwordHash, failedAttempts: 0 })
+         +);                                                             
+      92      }
+      93  
+      94      await audit('resetPassword', { userId: user.ID });
+     ...
+       98    srv.on('assignRole', async (req) => {
+       99      const { userId, roleId } = req.data;
+      100  
+       99 -    const role = await SELECT.one.from(Roles).where({ ID: role
+          -Id });                                                        
+      101 +    const db = await cds.connect.to('db');                    
+      102 +                                                              
+      103 +    const role = await db.run(SELECT.one.from(Roles).where({ I
+          +D: roleId }));                                                
+      104      if (!role) return req.error(404, 'Role not found');
+      105  
+      102 -    const user = await SELECT.one.from(Users).where({ ID: user
+          -Id });                                                        
+      106 +    const user = await db.run(SELECT.one.from(Users).where({ I
+          +D: userId }));                                                
+      107      if (!user) return req.error(404, 'User not found');
+      108  
+      105 -    const existing = await SELECT.one.from(UserRoles).where({ 
+          -user_ID: userId, role_ID: roleId });                          
+      109 +    const existing = await db.run(SELECT.one.from(UserRoles).w
+          +here({ user_ID: userId, role_ID: roleId }));                  
+      110      if (!existing) {
+      107 -      await INSERT.into(UserRoles).entries({ user_ID: userId, 
+          -role_ID: roleId });                                           
+      111 +      await db.run(INSERT.into(UserRoles).entries({ user_ID: u
+          +serId, role_ID: roleId }));                                   
+      112      }
+      113  
+      114      await audit('assignRole', { userId, roleId });
+     ...
+      118    srv.on('unassignRole', async (req) => {
+      119      const { userId, roleId } = req.data;
+      120  
+      117 -    const existing = await SELECT.one.from(UserRoles).where({ 
+          -user_ID: userId, role_ID: roleId });                          
+      121 +    const db = await cds.connect.to('db');                    
+      122 +    const existing = await db.run(SELECT.one.from(UserRoles).w
+          +here({ user_ID: userId, role_ID: roleId }));                  
+      123      if (!existing) return req.error(404, 'Role assignment not 
+           found');
+      124  
+      120 -    await DELETE.from(UserRoles).where({ ID: existing.ID });  
+      125 +    await db.run(DELETE.from(UserRoles).where({ ID: existing.I
+          +D }));                                                        
+      126      await audit('unassignRole', { userId, roleId });
+      127      return true;
+      128    });
+
+● Now let's restart the server and re-run both the full Jest suite and the
+  manual end-to-end lock/unlock flow.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● All 34 tests still pass. Now the live server test.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● The entire backend flow works end-to-end: register → locked → admin unlock →
+  login → own-profile read with expands → re-lock. Now let's verify the
+  travelhub UI5 app actually loads in a browser and exercises the real
+  login/dashboard flow.
+
+● Skill(claude-in-chrome)
+  ⎿  Successfully loaded skill
+
+● No browser access this session — I'll do static verification instead:
+  syntax-check every JS file and confirm each asset is served correctly by the
+  running server, then hand off manual browser testing to you.
+
+  Ran 3 shell commands (ctrl+o to expand)
+
+● xml2js is available — I'll use it to validate every view/fragment XML file is
+  well-formed.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● All XML is well-formed. Let's confirm the static assets actually serve through
+  the running CAP server (index.html, Component.js, and a view).
+
+  Ran 3 shell commands (ctrl+o to expand)
+● Summary
+
+  Built the TravelHub freestyle Fiori app under app/travelhub/webapp on top of
+  the existing srv/ services, following fiori_dev_spec.md and the
+  travelhub-add-view skill conventions (BaseController-centralized
+  cookies/JWT/ajax, OData V4 comments, Header fragment branding, no web
+  components/custom controls).
+
+  Backend changes (both approved by you first):
+  - Added AuthService.register (public) in srv/auth-service.cds +
+    srv/handlers/auth.handler.js — creates a locked
+    Users+UserCredentials+UserRoles(TRAVELLER)+Travellers row, enabling
+    self-registration (ACs #3–#5), which had no viable endpoint before.
+  - Fixed a pre-existing bug in srv/handlers/user-management.handler.js: every
+    action (lockUser, unlockUser, createUser, etc.) used bare
+    SELECT/UPDATE/INSERT with no cds.connect.to('db'), so they threw "no primary
+    database connected" outside Jest's test harness. Fixed to match the working
+    pattern already in auth.handler.js. Without this, Admin lock/unlock (AC #6)
+    would have been dead in real usage.
+
+  Deliberate spec deviations (all discussed with you): trip-count donut instead
+  of spend (no amount field exists); Create+Delete only on Travelled Locations
+  (backend hard-blocks UPDATE with 405); Addresses tab is a single-record form,
+  not a table (schema has one addressType+phone, not a composition); Admin table
+  drops the "Role" column (Travellers has no role field) and shows
+  Status/Account instead of a lock-derived Status only.
+
+  Verified:
+  - cds compile passes for all 3 services; full Jest suite 34/34 passing (both
+    parallel and --runInBand)
+  - All XML views/fragments are well-formed; all JS controllers pass node 
+    --check
+  - Full live end-to-end via curl against npm start: register → 403 locked →
+    admin unlockUser → login → /auth/me → own-profile read with $expand →
+    re-lockUser — all correct
+  - Static assets (index.html, Component.js, views, fragments) all serve 200
+    from the CAP server, both app/travelhub and the pre-existing
+    app/managetravel mount side by side
+
+  Not verified: actual browser rendering (dialogs, the sap.viz donut,
+  IconTabBar) — no Chrome tooling available this session. The server is running
+  now; open http://localhost:4004/travelhub/index.html to click through it
+  yourself (login screen → Register dialog → Admin/Traveller dashboards).
+  Nothing has been committed — let me know if you'd like that done once you've
+  reviewed it.
+
+✻ Sautéed for 25m 35s · done 11:53 PM

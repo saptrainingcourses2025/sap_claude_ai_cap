@@ -1,0 +1,30 @@
+<mvc:View
+    controllerName="travelhub.controller.Login"
+    xmlns:mvc="sap.ui.core.mvc"
+    xmlns="sap.m"
+    xmlns:l="sap.ui.layout"
+    displayBlock="true">
+
+    <Page id="pageLogin" showHeader="false">
+        <content>
+            <VBox class="sapUiMediumMargin" alignItems="Center" justifyContent="Center">
+                <l:VerticalLayout class="sapUiMediumMargin" width="320px">
+                    <Title text="Sign in to TravelHub" level="H2" class="sapUiSmallMarginBottom"/>
+
+                    <Label text="Email" labelFor="inpLoginName"/>
+                    <Input id="inpLoginName" type="Email" value="{login>/loginName}" width="100%"/>
+
+                    <Label text="Password" labelFor="inpPassword" class="sapUiTinyMarginTop"/>
+                    <Input id="inpPassword" type="Password" value="{login>/password}" width="100%"/>
+
+                    <Button id="btnLogin" text="Login" type="Emphasized" press=".onLogin"
+                            class="sapUiSmallMarginTop" width="100%" busy="{login>/busy}"/>
+
+                    <Link text="Register as Traveller" press=".onOpenRegister"
+                          class="sapUiSmallMarginTop"/>
+                </l:VerticalLayout>
+            </VBox>
+        </content>
+    </Page>
+
+</mvc:View>

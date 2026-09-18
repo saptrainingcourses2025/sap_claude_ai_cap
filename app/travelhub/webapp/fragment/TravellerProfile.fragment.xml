@@ -1,0 +1,11 @@
+<core:FragmentDefinition xmlns="sap.m" xmlns:core="sap.ui.core">
+
+    <HBox class="sapUiSmallMarginBottom" alignItems="Center">
+        <core:Icon src="sap-icon://person-placeholder" size="2.5rem" class="sapUiTinyMarginEnd"/>
+        <VBox>
+            <Title text="{traveller>/profile/fullName}" level="H3"/>
+            <Text text="{traveller>/profile/addressLabel}"/>
+        </VBox>
+    </HBox>
+
+</core:FragmentDefinition>

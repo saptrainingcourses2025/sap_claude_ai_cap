@@ -1,0 +1,42 @@
+<!--
+    Create + Delete only, no inline edit: the backend rejects UPDATE on
+    TravelledLocations with a 405 (immutable once created) — agreed with the
+    user rather than relaxing that rule. Row cells are therefore read-only
+    Text controls.
+-->
+<core:FragmentDefinition xmlns="sap.m" xmlns:core="sap.ui.core">
+
+    <VBox class="sapUiSmallMarginTop">
+        <Toolbar>
+            <Select id="selNewDestination" items="{/Destinations}" width="180px" class="sapUiTinyMarginEnd">
+                <core:Item key="{ID}" text="{name}"/>
+            </Select>
+            <DatePicker id="dpNewFrom" placeholder="From" width="140px" class="sapUiTinyMarginEnd"/>
+            <DatePicker id="dpNewTo" placeholder="To" width="140px" class="sapUiTinyMarginEnd"/>
+            <Input id="inpNewNotes" placeholder="Notes" width="200px" class="sapUiTinyMarginEnd"/>
+            <Button text="Add Trip" type="Emphasized" press=".onAddLocation"/>
+        </Toolbar>
+
+        <Table id="tblLocations" items="{path: 'locations', parameters: {$$updateGroupId: 'travellerChanges'}}">
+            <columns>
+                <Column><Text text="Destination"/></Column>
+                <Column><Text text="From"/></Column>
+                <Column><Text text="To"/></Column>
+                <Column><Text text="Notes"/></Column>
+                <Column hAlign="Center"><Text text="Remove"/></Column>
+            </columns>
+            <items>
+                <ColumnListItem>
+                    <cells>
+                        <Text text="{destination/name}"/>
+                        <Text text="{travelFrom}"/>
+                        <Text text="{travelTo}"/>
+                        <Text text="{notes}"/>
+                        <Button icon="sap-icon://delete" type="Transparent" press=".onDeleteLocation"/>
+                    </cells>
+                </ColumnListItem>
+            </items>
+        </Table>
+    </VBox>
+
+</core:FragmentDefinition>

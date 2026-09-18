@@ -1,0 +1,44 @@
+<mvc:View
+    controllerName="travelhub.controller.AdminDashboard"
+    xmlns:mvc="sap.ui.core.mvc"
+    xmlns="sap.m"
+    displayBlock="true">
+
+    <Page id="pageAdminDashboard" showHeader="false" busy="{admin>/busy}">
+        <content>
+            <VBox class="sapUiMediumMargin">
+
+                <Title text="Admin Dashboard" level="H2" class="sapUiSmallMarginBottom"/>
+
+                <HBox wrap="Wrap" class="sapUiSmallMarginBottom">
+                    <GenericTile class="sapUiTinyMarginEnd sapUiTinyMarginBottom" header="Total Travellers" frameType="TwoByOne">
+                        <TileContent>
+                            <NumericContent value="{admin>/tiles/total}"/>
+                        </TileContent>
+                    </GenericTile>
+                    <GenericTile class="sapUiTinyMarginEnd sapUiTinyMarginBottom" header="Active" frameType="TwoByOne">
+                        <TileContent>
+                            <NumericContent value="{admin>/tiles/active}" valueColor="Good"/>
+                        </TileContent>
+                    </GenericTile>
+                    <GenericTile class="sapUiTinyMarginEnd sapUiTinyMarginBottom" header="Locked" frameType="TwoByOne">
+                        <TileContent>
+                            <NumericContent value="{admin>/tiles/locked}" valueColor="Error"/>
+                        </TileContent>
+                    </GenericTile>
+                    <GenericTile class="sapUiTinyMarginEnd sapUiTinyMarginBottom" header="Total Trips" frameType="TwoByOne">
+                        <TileContent>
+                            <NumericContent value="{admin>/tiles/trips}"/>
+                        </TileContent>
+                    </GenericTile>
+                </HBox>
+
+                <core:Fragment xmlns:core="sap.ui.core" fragmentName="travelhub.fragment.SpendDonutChart" type="XML"/>
+
+                <core:Fragment xmlns:core="sap.ui.core" fragmentName="travelhub.fragment.AdminTravellersTable" type="XML"/>
+
+            </VBox>
+        </content>
+    </Page>
+
+</mvc:View>

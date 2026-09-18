@@ -1,0 +1,20 @@
+<!--
+    Travellers has a single addressType + phone field, not a composition of
+    multiple addresses, so this is a single-record edit form (agreed with the
+    user) rather than an editable table. Bindings are relative to the
+    Travellers('<id>') element bound in TravellerDashboard.controller.js, so
+    edits queue a PATCH in the "travellerChanges" update group automatically.
+-->
+<core:FragmentDefinition xmlns="sap.m" xmlns:core="sap.ui.core" xmlns:l="sap.ui.layout">
+
+    <l:VerticalLayout class="sapUiSmallMargin" width="100%">
+        <Label text="Phone" labelFor="inpPhone"/>
+        <Input id="inpPhone" value="{phone}" width="300px"/>
+
+        <Label text="Address Type" labelFor="selAddressType" class="sapUiTinyMarginTop"/>
+        <Select id="selAddressType" selectedKey="{addressType_code}" items="{/AddressTypes}" width="300px">
+            <core:Item key="{code}" text="{name}"/>
+        </Select>
+    </l:VerticalLayout>
+
+</core:FragmentDefinition>

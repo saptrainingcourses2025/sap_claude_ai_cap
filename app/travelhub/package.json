@@ -1,0 +1,16 @@
+{
+  "name": "travelhub",
+  "version": "0.0.1",
+  "description": "TravelHub — SAPUI5 freestyle app on CAP OData V4 with JWT auth",
+  "keywords": [
+    "ui5",
+    "openui5",
+    "sapui5"
+  ],
+  "main": "webapp/index.html",
+  "dependencies": {},
+  "devDependencies": {
+    "@ui5/cli": "^4.0.33"
+  },
+  "scripts": {}
+}

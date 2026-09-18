@@ -1,0 +1,23 @@
+{
+  "generationParameters": {
+    "generationDate": "Thu Sep 17 2026 22:36:13 GMT-0400 (Eastern Daylight Time)",
+    "generatorPlatform": "Visual Studio Code",
+    "serviceType": "Local CAP",
+    "metadataFilename": "",
+    "serviceUrl": "http://localhost:4004/odata/v4/auth/",
+    "appName": "managetravel",
+    "appTitle": "Manage Travellers and Locations",
+    "appDescription": "An app that manage admin and traveller activity",
+    "appNamespace": "tyson.claude",
+    "ui5Theme": "sap_horizon",
+    "ui5Version": "1.152.0",
+    "enableEslint": true,
+    "enableTypeScript": false,
+    "showMockDataInfo": false,
+    "generatorVersion": "1.32.0",
+    "template": "Basic V4",
+    "generatorName": "SAP Fiori Application Generator",
+    "entityRelatedConfig": [],
+    "launchText": "To launch the generated app, start your CAP project:  and navigate to the following location in your browser:\n\nhttp://localhost:4004/managetravel/webapp/index.html"
+  }
+}

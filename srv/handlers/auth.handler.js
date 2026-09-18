@@ -51,6 +51,60 @@ module.exports = (srv) => {
     return issueTokens(user.ID);
   });
 
+  srv.on('register', async (req) => {
+    const { loginName, password: plain, firstName, lastName, phone, addressType } = req.data;
+
+    if (!loginName || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(loginName)) {
+      return req.error(400, 'A valid email is required');
+    }
+    if (!plain || plain.length < 8) {
+      return req.error(400, 'Password must be at least 8 characters');
+    }
+    if (!firstName || !firstName.trim() || !lastName || !lastName.trim()) {
+      return req.error(400, 'First name and last name are required');
+    }
+
+    const db = await cds.connect.to('db');
+
+    const existingUser = await db.run(SELECT.one.from('anubhav.claude.Users').where({ loginName }));
+    if (existingUser) return req.error(409, 'Email already registered');
+
+    const existingTraveller = await db.run(SELECT.one.from('anubhav.claude.Travellers').where({ email: loginName }));
+    if (existingTraveller) return req.error(409, 'Email already registered');
+
+    const travellerRole = await db.run(SELECT.one.from('anubhav.claude.Roles').where({ code: 'TRAVELLER' }));
+    if (!travellerRole) return req.error(500, 'TRAVELLER role is not configured');
+
+    const createdUser = await db.run(
+      INSERT.into('anubhav.claude.Users').entries({ firstName, lastName, loginName, isLocked: true })
+    );
+    const userId = createdUser?.ID ?? (await db.run(SELECT.one.from('anubhav.claude.Users').where({ loginName }))).ID;
+
+    const passwordHash = await password.hash(plain);
+    await db.run(
+      INSERT.into('anubhav.claude.UserCredentials').entries({ user_ID: userId, passwordHash, failedAttempts: 0 })
+    );
+    await db.run(INSERT.into('anubhav.claude.UserRoles').entries({ user_ID: userId, role_ID: travellerRole.ID }));
+
+    await db.run(
+      INSERT.into('anubhav.claude.Travellers').entries({
+        firstName,
+        lastName,
+        email: loginName,
+        phone,
+        addressType_code: addressType,
+        type_code: 'ST',
+        status_code: 'P',
+        userID: userId
+      })
+    );
+
+    return {
+      success: true,
+      message: 'Registration successful. An admin must unlock your account before first login.'
+    };
+  });
+
   srv.on('me', async (req) => {
     if (req.user._is_anonymous) return req.error(401, 'Not authenticated');
 
