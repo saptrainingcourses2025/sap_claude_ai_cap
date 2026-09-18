@@ -17,24 +17,27 @@
 @auth       = {{base}}/auth
 
 ### Paste the tokens you receive from the two login calls here
-@adminJwt   = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIzN2UwNTEzZS0xMWZkLTQwOGQtODI4MS0wZjI0YjU0ODJmM2EiLCJpYXQiOjE3ODk2NzcwMDUsImV4cCI6MTc4OTY3NzkwNSwiYXVkIjoiYWNjZXNzIn0.Y5NOyEk0rTq2aKJul2Red3AH7uDPWETxwDWLSxkms6E
-@userJwt    = 
+@adminJwt   = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI5MmMwMzMwNS1hMWUxLTQxZDEtOTNlNi1jYWVlMTI0NDQxNjIiLCJpYXQiOjE3ODk2Nzg1MzksImV4cCI6MTc4OTY3OTQzOSwiYXVkIjoiYWNjZXNzIn0.QW8i1ad9ktbqK1-CbtbftPiSmgXXRedIsAjejG2FZhY
+@userJwt    = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJlNGY1YTZiNy1jOGQ5LTQ0MDEtOTQwMS1mYTEyMzQ2MDAwMDYiLCJpYXQiOjE3ODk2Nzg0MDgsImV4cCI6MTc4OTY3OTMwOCwiYXVkIjoiYWNjZXNzIn0.9cCSqZ3vD8_65Vlp8ErgCqCXc94xSUy7HvIzDhtoiRE
 
 ### A traveller-role user that already exists in seed data
-@userLogin  = raj.sharma@example.com
+@userLogin  = rajesh.kumar@gmail.com
 
 ### ============================================================
 ###  PART 1 — ADMIN FLOW
 ### ============================================================
 
 ### 1.1  ADMIN — login (default admin created by user-init)
+### Set DEFAULT_ADMIN_PASSWORD in your local .env before first boot so you
+### know the password; otherwise a random one-time password is generated
+### and printed once to the server log on first startup.
 # @name adminLogin
 POST {{auth}}/login
 Content-Type: application/json
 
 {
   "loginName": "anubhav@anubhavtrainings.com",
-  "password":  "Welcome1!"
+  "password":  "<paste-DEFAULT_ADMIN_PASSWORD-or-see-startup-log>"
 }
 
 ###
@@ -64,7 +67,7 @@ GET {{catalog}}/Destinations
 Authorization: Bearer {{adminJwt}}
 Accept: application/json
 
-###
+### 
 
 
 ### ============================================================
@@ -77,7 +80,7 @@ POST {{auth}}/login
 Content-Type: application/json
 
 {
-  "loginName": "raj.sharma@example.com",
+  "loginName": "rajesh.kumar@gmail.com",
   "password":  "Welcome1!"
 }
 

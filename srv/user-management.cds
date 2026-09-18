@@ -12,7 +12,7 @@ service UserManagement @(
   function lockUser(userId: String)   returns Boolean;
   function unlockUser(userId: String) returns Boolean;
 
-  action createUser(firstName: String, lastName: String, email: String, roleId: String) returns Users;
+  action createUser(firstName: String, lastName: String, email: String, roleId: String, initialPassword: String) returns Users;
   action resetPassword(userId: String, newPassword: String) returns Boolean;
   action assignRole(userId: String, roleId: String)   returns Boolean;
   action unassignRole(userId: String, roleId: String) returns Boolean;

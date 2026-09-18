@@ -1,4 +1,5 @@
 const cds = require('@sap/cds');
+const password = require('../auth/password');
 
 async function audit(action, details) {
   try {
@@ -7,6 +8,18 @@ async function audit(action, details) {
   } catch {
     // audit logging is best-effort and must never block a write operation
   }
+}
+
+function validatePassword(req, value) {
+  if (!value || !value.trim()) {
+    req.error(400, 'Password must not be empty');
+    return false;
+  }
+  if (value.length < 8) {
+    req.error(400, 'Password must be at least 8 characters');
+    return false;
+  }
+  return true;
 }
 
 module.exports = (srv) => {
@@ -33,7 +46,9 @@ module.exports = (srv) => {
   });
 
   srv.on('createUser', async (req) => {
-    const { firstName, lastName, email, roleId } = req.data;
+    const { firstName, lastName, email, roleId, initialPassword } = req.data;
+
+    if (!validatePassword(req, initialPassword)) return;
 
     const role = await SELECT.one.from(Roles).where({ ID: roleId });
     if (!role) return req.error(404, 'Role not found');
@@ -49,6 +64,8 @@ module.exports = (srv) => {
     });
     const userID = created?.ID ?? (await SELECT.one.from(Users).where({ loginName: email })).ID;
 
+    const passwordHash = await password.hash(initialPassword);
+    await INSERT.into('anubhav.claude.UserCredentials').entries({ user_ID: userID, passwordHash, failedAttempts: 0 });
     await INSERT.into(UserRoles).entries({ user_ID: userID, role_ID: role.ID });
     await audit('createUser', { userId: userID, roleId: role.ID });
 
@@ -59,15 +76,18 @@ module.exports = (srv) => {
   srv.on('resetPassword', async (req) => {
     const { userId, newPassword } = req.data;
 
-    if (!newPassword || !newPassword.trim()) {
-      return req.error(400, 'Password must not be empty');
-    }
-    if (newPassword.length < 8) {
-      return req.error(400, 'Password must be at least 8 characters');
-    }
+    if (!validatePassword(req, newPassword)) return;
 
     const user = await SELECT.one.from(Users).where({ ID: userId });
     if (!user) return req.error(404, 'User not found');
+
+    const passwordHash = await password.hash(newPassword);
+    const creds = await SELECT.one.from('anubhav.claude.UserCredentials').where({ user_ID: userId });
+    if (creds) {
+      await UPDATE('anubhav.claude.UserCredentials').set({ passwordHash, failedAttempts: 0 }).where({ ID: creds.ID });
+    } else {
+      await INSERT.into('anubhav.claude.UserCredentials').entries({ user_ID: userId, passwordHash, failedAttempts: 0 });
+    }
 
     await audit('resetPassword', { userId: user.ID });
     return true;

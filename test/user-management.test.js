@@ -18,18 +18,44 @@ describe('UserManagement', () => {
   it('creates a user with a valid payload and 201', async () => {
     const res = await POST(
       '/odata/v4/user-management/createUser',
-      { firstName: 'New', lastName: 'User', email: 'new.user@travelapp.com', roleId: TRAVELLER_ROLE_ID },
+      { firstName: 'New', lastName: 'User', email: 'new.user@travelapp.com', roleId: TRAVELLER_ROLE_ID, initialPassword: 'newUser123' },
       admin
     );
     expect(res.status).to.equal(201);
     expect(res.data.loginName).to.equal('new.user@travelapp.com');
   });
 
+  it('lets a createUser-created user log in with the initial password', async () => {
+    const res = await POST(
+      '/odata/v4/user-management/createUser',
+      { firstName: 'Login', lastName: 'Check', email: 'login.check@travelapp.com', roleId: TRAVELLER_ROLE_ID, initialPassword: 'loginCheck123' },
+      admin
+    );
+    expect(res.status).to.equal(201);
+
+    const loginRes = await POST('/odata/v4/auth/login', {
+      loginName: 'login.check@travelapp.com',
+      password: 'loginCheck123'
+    });
+    expect(loginRes.status).to.equal(200);
+    expect(loginRes.data.accessToken).to.be.a('string');
+  });
+
+  it('rejects createUser with a missing initialPassword with 400', async () => {
+    await expect(
+      POST(
+        '/odata/v4/user-management/createUser',
+        { firstName: 'No', lastName: 'Password', email: 'no.password@travelapp.com', roleId: TRAVELLER_ROLE_ID },
+        admin
+      )
+    ).to.be.rejectedWith(/400/);
+  });
+
   it('rejects createUser with a duplicate loginName with 409', async () => {
     await expect(
       POST(
         '/odata/v4/user-management/createUser',
-        { firstName: 'Dup', lastName: 'User', email: 'rajesh.kumar@gmail.com', roleId: TRAVELLER_ROLE_ID },
+        { firstName: 'Dup', lastName: 'User', email: 'rajesh.kumar@gmail.com', roleId: TRAVELLER_ROLE_ID, initialPassword: 'irrelevant1' },
         admin
       )
     ).to.be.rejectedWith(/409/);
@@ -67,6 +93,22 @@ describe('UserManagement', () => {
         admin
       )
     ).to.be.rejectedWith(/400/);
+  });
+
+  it('actually changes the password so login succeeds with the new one', async () => {
+    const res = await POST(
+      '/odata/v4/user-management/resetPassword',
+      { userId: HANS_USER_ID, newPassword: 'newHansPassword1' },
+      admin
+    );
+    expect(res.data.value).to.equal(true);
+
+    const loginRes = await POST('/odata/v4/auth/login', {
+      loginName: 'hans.mueller@web.de',
+      password: 'newHansPassword1'
+    });
+    expect(loginRes.status).to.equal(200);
+    expect(loginRes.data.accessToken).to.be.a('string');
   });
 
   it('rejects assignRole with an invalid roleId with 404', async () => {
